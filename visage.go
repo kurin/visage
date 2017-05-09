@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -47,7 +49,7 @@ type FileSystem interface {
 	// interface.
 	String() string
 
-	Open(name string) (io.ReadCloser, error)
+	Open(path string) (io.ReadCloser, error)
 	Stat(path string) (os.FileInfo, error)
 	ReadDir(path string) ([]os.FileInfo, error)
 }
@@ -151,4 +153,34 @@ func (wr *wrappedReader) Read(p []byte) (int, error) {
 
 func (wr *wrappedReader) Close() error {
 	return wr.r.Close()
+}
+
+type Directory string
+
+func (d Directory) String() string { return string(d) }
+
+func (d Directory) absPath(path string) string {
+	dir := string(d)
+	p := filepath.Join(dir, filepath.Clean(path))
+	if !strings.HasPrefix(p, dir) {
+		p = filepath.Join(dir, p)
+	}
+	return p
+}
+
+func (d Directory) Open(path string) (io.ReadCloser, error) {
+	return os.Open(d.absPath(path))
+}
+
+func (d Directory) Stat(path string) (os.FileInfo, error) {
+	return os.Stat(d.absPath(path))
+}
+
+func (d Directory) ReadDir(path string) ([]os.FileInfo, error) {
+	f, err := os.Open(d.absPath(path))
+	defer f.Close()
+	if err != nil {
+		return nil, err
+	}
+	return f.Readdir(0)
 }
