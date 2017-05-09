@@ -15,32 +15,50 @@ import (
 	uuid "github.com/satori/go.uuid"
 )
 
-var (
-	grants = map[string]*Grant{}
-	gmux   = &sync.RWMutex{}
-)
+type Server struct {
+	grants map[string]*Grant
+	gmux   sync.RWMutex
+	done   chan struct{}
+}
 
-func init() {
+func New() *Server {
+	s := &Server{
+		grants: make(map[string]*Grant),
+		done:   make(chan struct{}),
+	}
 	go func() {
-		for range time.Tick(time.Minute) {
-			var rem []string
-			gmux.RLock()
-			for key, val := range grants {
-				if !val.Valid() {
-					rem = append(rem, key)
+		t := time.NewTicker(time.Minute)
+		defer t.Stop()
+		for {
+			select {
+			case <-t.C:
+				var rem []string
+				s.gmux.RLock()
+				for key, val := range s.grants {
+					if !val.Valid() {
+						rem = append(rem, key)
+					}
 				}
+				s.gmux.RUnlock()
+				if len(rem) == 0 {
+					continue
+				}
+				s.gmux.Lock()
+				for _, key := range rem {
+					delete(s.grants, key)
+				}
+				s.gmux.Unlock()
+			case <-s.done:
+				return
 			}
-			gmux.RUnlock()
-			if len(rem) == 0 {
-				continue
-			}
-			gmux.Lock()
-			for _, key := range rem {
-				delete(grants, key)
-			}
-			gmux.Unlock()
 		}
 	}()
+	return s
+}
+
+func (s *Server) Shutdown() {
+	close(s.done)
+	return
 }
 
 // FileSystem specifies the abstraction that backends must satisfy.
@@ -59,7 +77,7 @@ type FileSystem interface {
 // argument means the grant expires until it is revoked.
 //
 // NewGrant returns an access token which can be used to retrieve this grant.
-func NewGrant(fs FileSystem, files []string, expires time.Time) string {
+func (s *Server) NewGrant(fs FileSystem, files []string, expires time.Time) string {
 	g := &Grant{
 		fs:    fs,
 		exp:   expires,
@@ -70,17 +88,17 @@ func NewGrant(fs FileSystem, files []string, expires time.Time) string {
 		g.files[f] = true
 	}
 	auth := uuid.NewV4().String()
-	gmux.Lock()
-	grants[auth] = g
-	gmux.Unlock()
+	s.gmux.Lock()
+	s.grants[auth] = g
+	s.gmux.Unlock()
 	return auth
 }
 
 // Lookup returns the grant corresponding to the given auth token.
-func Lookup(auth string) *Grant {
-	gmux.RLock()
-	defer gmux.RUnlock()
-	return grants[auth]
+func (s *Server) Lookup(auth string) *Grant {
+	s.gmux.RLock()
+	defer s.gmux.RUnlock()
+	return s.grants[auth]
 }
 
 // Grant represents an access grant.
@@ -155,6 +173,7 @@ func (wr *wrappedReader) Close() error {
 	return wr.r.Close()
 }
 
+// Directory exposes a local directory as a FileSystem.
 type Directory string
 
 func (d Directory) String() string { return string(d) }
