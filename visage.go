@@ -72,6 +72,47 @@ type FileSystem interface {
 	ReadDir(path string) ([]os.FileInfo, error)
 }
 
+func walk(fs FileSystem, path string, fi os.FileInfo, fn filepath.WalkFunc) error {
+	err := fn(path, fi, nil)
+	if err != nil {
+		if fi.IsDir() && err == filepath.SkipDir {
+			return nil
+		}
+		return err
+	}
+	if !fi.IsDir() {
+		return nil
+	}
+	fis, err := fs.ReadDir(path)
+	if err != nil {
+		return err
+	}
+	for _, fi := range fis {
+		err := walk(fs, filepath.Join(path, fi.Name()), fi, fn)
+		if err != nil {
+			if err != filepath.SkipDir || !fi.IsDir() {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// Walk does not handle cycles gracefully.
+func Walk(fs FileSystem, root string, fn filepath.WalkFunc) error {
+	fi, err := fs.Stat(root)
+	var fnErr error
+	if err != nil {
+		fnErr = fn(root, nil, err)
+	} else {
+		fnErr = walk(fs, root, fi, fn)
+	}
+	if fnErr == filepath.SkipDir {
+		return nil
+	}
+	return fnErr
+}
+
 // NewGrant creates a grant to the names files from the given FileSystem.  Each
 // file argument passed must be a valid argument to FileSystem.Open().  A zero time
 // argument means the grant expires until it is revoked.
@@ -94,6 +135,20 @@ func (s *Server) NewGrant(fs FileSystem, files []string, expires time.Time) stri
 	return auth
 }
 
+func (s *Server) NewDirGrant(fs FileSystem, root string, expires time.Time) string {
+	g := &Grant{
+		fs:  fs,
+		exp: expires,
+		now: time.Now,
+		pfx: root,
+	}
+	auth := uuid.NewV4().String()
+	s.gmux.Lock()
+	s.grants[auth] = g
+	s.gmux.Unlock()
+	return auth
+}
+
 // Lookup returns the grant corresponding to the given auth token.
 func (s *Server) Lookup(auth string) *Grant {
 	s.gmux.RLock()
@@ -108,6 +163,7 @@ type Grant struct {
 	now     func() time.Time
 	revoked bool
 	files   map[string]bool
+	pfx     string
 	fmux    sync.Mutex
 }
 
@@ -116,15 +172,27 @@ func (g *Grant) Valid() bool {
 	return g != nil && (g.exp.IsZero() || (!g.exp.IsZero() && g.exp.After(g.now()))) && !g.revoked
 }
 
+func (g *Grant) checkPath(path string) error {
+	if g.pfx == "" {
+		g.fmux.Lock()
+		defer g.fmux.Unlock()
+		if !g.files[path] {
+			return fmt.Errorf("%s: access grant not valid", path)
+		}
+	}
+	if g.pfx != "" && !strings.HasPrefix(path, g.pfx) {
+		return fmt.Errorf("%s: access grant not valid", path)
+	}
+	return nil
+}
+
 // Open returns an io.ReadCloser for the given file if it is in the grant.
 func (g *Grant) Open(path string) (io.ReadCloser, error) {
 	if !g.Valid() {
 		return nil, errors.New("access grant not valid")
 	}
-	g.fmux.Lock()
-	defer g.fmux.Unlock()
-	if !g.files[path] {
-		return nil, fmt.Errorf("%s: access grant not valid", path)
+	if err := g.checkPath(path); err != nil {
+		return nil, err
 	}
 	rc, err := g.fs.Open(path)
 	if err != nil {
@@ -142,11 +210,21 @@ func (g *Grant) List() []string {
 		return nil
 	}
 	var rtn []string
-	g.fmux.Lock()
-	defer g.fmux.Unlock()
-	for key := range g.files {
-		if _, err := g.fs.Stat(key); err == nil {
-			rtn = append(rtn, key)
+	if g.pfx != "" {
+		Walk(g.fs, g.pfx, func(path string, fi os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			rtn = append(rtn, path)
+			return nil
+		})
+	} else {
+		g.fmux.Lock()
+		defer g.fmux.Unlock()
+		for key := range g.files {
+			if _, err := g.fs.Stat(key); err == nil {
+				rtn = append(rtn, key)
+			}
 		}
 	}
 	sort.Strings(rtn)
@@ -158,13 +236,9 @@ func (g *Grant) Stat(path string) (os.FileInfo, error) {
 	if !g.Valid() {
 		return nil, errors.New("access grant not valid")
 	}
-	g.fmux.Lock()
-	defer g.fmux.Unlock()
-
-	if !g.files[path] {
-		return nil, fmt.Errorf("%s: access grant not valid", path)
+	if err := g.checkPath(path); err != nil {
+		return nil, err
 	}
-
 	return g.Stat(path)
 }
 
