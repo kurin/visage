@@ -18,8 +18,20 @@ type Server struct {
 
 func (s *Server) RegisterHandlers(root string) {
 	// TODO: accept a custom mux
+	http.HandleFunc(path.Join("/", root, "/"), s.root)
 	http.HandleFunc(path.Join("/", root, "/list"), s.list)
 	http.HandleFunc(path.Join("/", root, "/get"), s.get)
+}
+
+func (s *Server) root(w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte(`
+<html>
+<form action="/list" method="GET">
+<input type="text" name="auth">
+<input type="submit">
+</form>
+</html>
+	`))
 }
 
 func (s *Server) list(w http.ResponseWriter, r *http.Request) {
