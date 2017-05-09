@@ -215,7 +215,9 @@ func (g *Grant) List() []string {
 			if err != nil {
 				return err
 			}
-			rtn = append(rtn, path)
+			if !fi.IsDir() {
+				rtn = append(rtn, path)
+			}
 			return nil
 		})
 	} else {
