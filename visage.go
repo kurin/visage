@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -85,7 +86,7 @@ func walk(fs FileSystem, path string, fi os.FileInfo, fn filepath.WalkFunc) erro
 	}
 	fis, err := fs.ReadDir(path)
 	if err != nil {
-		return err
+		return fn(path, fi, err)
 	}
 	for _, fi := range fis {
 		err := walk(fs, filepath.Join(path, fi.Name()), fi, fn)
@@ -128,7 +129,7 @@ func (s *Server) NewGrant(fs FileSystem, files []string, expires time.Time) stri
 	for _, f := range files {
 		g.files[f] = true
 	}
-	auth := uuid.NewV4().String()
+	auth := uuid.NewV4().String() // TODO: we don't really need uuid, so kill the dependency.
 	s.gmux.Lock()
 	s.grants[auth] = g
 	s.gmux.Unlock()
@@ -211,15 +212,20 @@ func (g *Grant) List() []string {
 	}
 	var rtn []string
 	if g.pfx != "" {
-		Walk(g.fs, g.pfx, func(path string, fi os.FileInfo, err error) error {
+		if err := Walk(g.fs, g.pfx, func(path string, fi os.FileInfo, err error) error {
 			if err != nil {
+				if fi.IsDir() {
+					return filepath.SkipDir
+				}
 				return err
 			}
 			if !fi.IsDir() {
 				rtn = append(rtn, path)
 			}
 			return nil
-		})
+		}); err != nil {
+			log.Println(err)
+		}
 	} else {
 		g.fmux.Lock()
 		defer g.fmux.Unlock()
