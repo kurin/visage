@@ -113,11 +113,14 @@ type Grant struct {
 
 // Valid reports whether the given grant is valid.
 func (g *Grant) Valid() bool {
-	return g != nil && !g.exp.IsZero() && g.exp.After(g.now()) && !g.revoked
+	return g != nil && (g.exp.IsZero() || (!g.exp.IsZero() && g.exp.After(g.now()))) && !g.revoked
 }
 
 // Open returns an io.ReadCloser for the given file if it is in the grant.
 func (g *Grant) Open(path string) (io.ReadCloser, error) {
+	if !g.Valid() {
+		return nil, errors.New("access grant not valid")
+	}
 	g.fmux.Lock()
 	defer g.fmux.Unlock()
 	if !g.files[path] {
@@ -135,11 +138,16 @@ func (g *Grant) Open(path string) (io.ReadCloser, error) {
 
 // List enumerates all the files in the grant.
 func (g *Grant) List() []string {
+	if !g.Valid() {
+		return nil
+	}
 	var rtn []string
 	g.fmux.Lock()
 	defer g.fmux.Unlock()
 	for key := range g.files {
-		rtn = append(rtn, key)
+		if _, err := g.fs.Stat(key); err == nil {
+			rtn = append(rtn, key)
+		}
 	}
 	sort.Strings(rtn)
 	return rtn
@@ -147,6 +155,9 @@ func (g *Grant) List() []string {
 
 // Stat returns info for a given file.
 func (g *Grant) Stat(path string) (os.FileInfo, error) {
+	if !g.Valid() {
+		return nil, errors.New("access grant not valid")
+	}
 	g.fmux.Lock()
 	defer g.fmux.Unlock()
 
