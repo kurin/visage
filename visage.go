@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"sort"
-	"strings"
 	"sync"
 )
 
@@ -23,7 +21,8 @@ type Share struct {
 }
 
 type View struct {
-	s *Share
+	s  *Share
+	fs FileSystem
 }
 
 // FileSystem specifies the abstraction that backends must satisfy.
@@ -36,16 +35,30 @@ type FileSystem interface {
 	ReadDir(path string) ([]os.FileInfo, error)
 }
 
+// A Grant is used to gate access to resources in a FileSystem.  Methods in
+// this interface must be safe to call from multiple goroutines simultaneously.
 type Grant interface {
+	// Valid reports whether this grant can be used to gate access.
 	Valid() bool
-	Verify(string, Token) bool
-	Grants(string) bool
-	Cancel()
+
+	// Verify reports whether the given access token is good.
+	Verify(Token) bool
+
+	// Allows reports whether this grant gates access to the given path.
+	Allows(string) bool
 }
 
+// A Token is an identifier that is used by a Grant to verify a request.
 type Token interface {
-	Data() []byte
+
+	// Contents should return a bite slice necessary to verify the token.  It
+	// must be callable from multiple goroutines simultaneously.
+	Contents() []byte
 }
+
+type StaticToken string
+
+func (s StaticToken) Contents() []byte { return []byte(s) }
 
 func (s *Share) FileSystems() []string {
 	s.mux.Lock()
@@ -77,61 +90,32 @@ func (s *Share) AddGrant(fs string, g Grant) error {
 	return nil
 }
 
-func (v View) access(fs, path string, t Token) bool {
+func (v *View) access(t Token, path string) bool {
 	v.s.mux.Lock()
 	defer v.s.mux.Unlock()
 
-	grants, ok := v.s.grants[fs]
+	grants, ok := v.s.grants[v.fs.String()]
 	if !ok {
 		return false
 	}
 	for _, g := range grants {
-		if g.Valid() && g.Verify(path, t) {
+		if g.Valid() && g.Verify(t) && g.Allows(path) {
 			return true
 		}
 	}
 	return false
 }
 
-func (v View) Open(fs, path string, t Token) (io.ReadCloser, error) {
-	if !v.access(fs, path, t) {
+func (v View) Open(t Token, path string) (io.ReadCloser, error) {
+	if !v.access(t, path) {
 		return nil, ErrNoAccess
 	}
-
-	v.s.mux.Lock()
-	defer v.s.mux.Unlock()
-
-	fsys := v.s.fs[fs]
-	return fsys.Open(path)
+	return v.fs.Open(path)
 }
 
-// Directory exposes a local directory as a FileSystem.
-type Directory string
-
-func (d Directory) String() string { return string(d) }
-
-func (d Directory) absPath(path string) string {
-	dir := string(d)
-	p := filepath.Join(dir, filepath.Clean(path))
-	if !strings.HasPrefix(p, dir) {
-		p = filepath.Join(dir, p)
+func (v View) ReadDir(t Token, path string) ([]os.FileInfo, error) {
+	if !v.access(t, path) {
+		return nil, ErrNoAccess
 	}
-	return p
-}
-
-func (d Directory) Open(path string) (io.ReadCloser, error) {
-	return os.Open(d.absPath(path))
-}
-
-func (d Directory) Stat(path string) (os.FileInfo, error) {
-	return os.Stat(d.absPath(path))
-}
-
-func (d Directory) ReadDir(path string) ([]os.FileInfo, error) {
-	f, err := os.Open(d.absPath(path))
-	defer f.Close()
-	if err != nil {
-		return nil, err
-	}
-	return f.Readdir(0)
+	return v.fs.ReadDir(path)
 }
