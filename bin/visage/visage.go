@@ -9,7 +9,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"time"
 
 	"golang.org/x/crypto/acme/autocert"
 
@@ -21,6 +20,7 @@ var (
 	root   = flag.String("root", "", "serve the given directory")
 	port   = flag.String("port", "8080", "port to listen on")
 	domain = flag.String("domain", "", "domain (for TLS)")
+	secret = flag.String("secret", "", "initial admin secret")
 )
 
 func main() {
@@ -39,10 +39,17 @@ func main() {
 	}
 	fs := visage.Directory(*root)
 	v := visage.New()
-	auth := v.NewDirGrant(fs, "/", time.Time{})
-	fmt.Println(auth)
+	if err := v.AddFileSystem(fs); err != nil {
+		fmt.Println(err)
+		return
+	}
+	g := visage.NewGrant()
+	g = visage.WithAllowPrefix(g, "")
+	g = visage.WithVerifyStaticToken(g, "ok")
+	v.AddGrant(fs.String(), g)
 	w := web.Server{
-		Visage: v,
+		Visage:    v,
+		SecretKey: *secret,
 	}
 	w.RegisterHandlers("/")
 	if *domain != "" {
