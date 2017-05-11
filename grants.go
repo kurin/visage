@@ -27,10 +27,10 @@ func (s staticGrant) Verify(t Token) bool {
 	return string(t.Contents()) == s.token || s.Grant.Verify(t)
 }
 
-// WithAllowStaticToken wraps the parent grant, returning a new grant that verifies
+// WithVerifyStaticToken wraps the parent grant, returning a new grant that verifies
 // token.  It does not overwrite other methods of access;
-// WithAllowStaticToken(WithAllowStaticToken(g, "a"), "b") would accept both "a" and "b".
-func WithAllowStaticToken(g Grant, token string) Grant {
+// WithVerifyStaticToken(WithVerifyStaticToken(g, "a"), "b") would accept both "a" and "b".
+func WithVerifyStaticToken(g Grant, token string) Grant {
 	return staticGrant{
 		Grant: g,
 		token: token,

@@ -175,7 +175,6 @@ func (v View) List(t Token) ([]string, error) {
 				return nil
 			}
 		}
-		fmt.Println("no access to %q", path)
 		return nil
 	}); err != nil {
 		return nil, err
