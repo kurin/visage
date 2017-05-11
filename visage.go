@@ -2,6 +2,7 @@
 package visage
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -51,25 +52,11 @@ type Grant interface {
 	Valid() bool
 
 	// Verify reports whether the given access token is good.
-	Verify(Token) bool
+	Verify(context.Context) bool
 
 	// Allows reports whether this grant gates access to the given path.
 	Allows(string) bool
 }
-
-// A Token is an identifier that is used by a Grant to verify a request.
-type Token interface {
-
-	// Contents should return a bite slice necessary to verify the token.  It
-	// must be callable from multiple goroutines simultaneously.
-	Contents() []byte
-}
-
-// A StaticToken is a token that returns a static string.
-type StaticToken string
-
-// Contents satisfies the Token interface.
-func (s StaticToken) Contents() []byte { return []byte(s) }
 
 func (s *Share) FileSystems() []string {
 	s.mux.Lock()
@@ -141,30 +128,30 @@ func (v *View) grants() []Grant {
 	return grants
 }
 
-func (v *View) access(t Token, path string) bool {
+func (v *View) access(ctx context.Context, path string) bool {
 	for _, g := range v.grants() {
-		if g.Valid() && g.Verify(t) && g.Allows(path) {
+		if g.Valid() && g.Verify(ctx) && g.Allows(path) {
 			return true
 		}
 	}
 	return false
 }
 
-func (v View) Open(t Token, path string) (io.ReadCloser, error) {
-	if !v.access(t, path) {
+func (v View) Open(ctx context.Context, path string) (io.ReadCloser, error) {
+	if !v.access(ctx, path) {
 		return nil, ErrNoAccess
 	}
 	return v.fs.Open(path)
 }
 
-func (v View) ReadDir(t Token, path string) ([]os.FileInfo, error) {
-	if !v.access(t, path) {
+func (v View) ReadDir(ctx context.Context, path string) ([]os.FileInfo, error) {
+	if !v.access(ctx, path) {
 		return nil, ErrNoAccess
 	}
 	return v.fs.ReadDir(path)
 }
 
-func (v View) List(t Token) ([]string, error) {
+func (v View) List(ctx context.Context) ([]string, error) {
 	grants := v.grants()
 
 	var files []string
@@ -181,7 +168,7 @@ func (v View) List(t Token) ([]string, error) {
 		}
 
 		for _, g := range grants {
-			if g.Valid() && g.Verify(t) && g.Allows(path) {
+			if g.Valid() && g.Verify(ctx) && g.Allows(path) {
 				files = append(files, path)
 				return nil
 			}

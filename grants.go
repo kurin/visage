@@ -1,6 +1,7 @@
 package visage
 
 import (
+	"context"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -8,9 +9,9 @@ import (
 
 type nullGrant struct{}
 
-func (n nullGrant) Valid() bool        { return true }
-func (n nullGrant) Verify(Token) bool  { return false }
-func (n nullGrant) Allows(string) bool { return false }
+func (n nullGrant) Valid() bool                 { return true }
+func (n nullGrant) Verify(context.Context) bool { return false }
+func (n nullGrant) Allows(string) bool          { return false }
 
 // NewGrant returns a new grant.  The returned grant is always valid, but
 // verifies no tokens and allows no paths.
@@ -23,18 +24,23 @@ type staticGrant struct {
 	token string
 }
 
-func (s staticGrant) Verify(t Token) bool {
-	return string(t.Contents()) == s.token || s.Grant.Verify(t)
+// unexported context key
+type ctxKey int
+
+const staticKey ctxKey = 0
+
+func (s staticGrant) Verify(ctx context.Context) bool {
+	token, ok := ctx.Value(staticKey).(string)
+	if !ok {
+		return false
+	}
+	return token == s.token || s.Grant.Verify(ctx)
 }
 
-// WithVerifyStaticToken wraps the parent grant, returning a new grant that verifies
-// token.  It does not overwrite other methods of access;
-// WithVerifyStaticToken(WithVerifyStaticToken(g, "a"), "b") would accept both "a" and "b".
-func WithVerifyStaticToken(g Grant, token string) Grant {
-	return staticGrant{
-		Grant: g,
-		token: token,
-	}
+// WithStaticToken wraps the parent context with a new context that provides
+// static token authentication.
+func WithStaticToken(ctx context.Context, token string) context.Context {
+	return context.WithValue(ctx, staticKey, token)
 }
 
 type fileListGrant struct {
