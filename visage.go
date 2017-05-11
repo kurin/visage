@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 )
@@ -18,6 +19,13 @@ type Share struct {
 	fs     map[string]FileSystem
 	grants map[string][]Grant
 	mux    sync.Mutex
+}
+
+func New() *Share {
+	return &Share{
+		fs:     make(map[string]FileSystem),
+		grants: make(map[string][]Grant),
+	}
 }
 
 type View struct {
@@ -38,7 +46,8 @@ type FileSystem interface {
 // A Grant is used to gate access to resources in a FileSystem.  Methods in
 // this interface must be safe to call from multiple goroutines simultaneously.
 type Grant interface {
-	// Valid reports whether this grant can be used to gate access.
+	// Valid reports whether this grant can be used to gate access.  Grants should
+	// never become valid after having been invalid for any period of time.
 	Valid() bool
 
 	// Verify reports whether the given access token is good.
@@ -56,8 +65,10 @@ type Token interface {
 	Contents() []byte
 }
 
+// A StaticToken is a token that returns a static string.
 type StaticToken string
 
+// Contents satisfies the Token interface.
 func (s StaticToken) Contents() []byte { return []byte(s) }
 
 func (s *Share) FileSystems() []string {
@@ -72,11 +83,30 @@ func (s *Share) FileSystems() []string {
 	return rtn
 }
 
-func (s *Share) FileSystem(fs string) FileSystem {
+func (s *Share) AddFileSystem(fs FileSystem) error {
 	s.mux.Lock()
 	defer s.mux.Unlock()
 
-	return s.fs[fs]
+	if _, ok := s.fs[fs.String()]; ok {
+		return fmt.Errorf("visage: %s: file system already registered", fs.String())
+	}
+	s.fs[fs.String()] = fs
+	return nil
+}
+
+func (s *Share) View(fs string) (*View, error) {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+
+	f, ok := s.fs[fs]
+	if !ok {
+		return nil, fmt.Errorf("visage: %s: file system not registered")
+	}
+
+	return &View{
+		s:  s,
+		fs: f,
+	}, nil
 }
 
 func (s *Share) AddGrant(fs string, g Grant) error {
@@ -90,15 +120,18 @@ func (s *Share) AddGrant(fs string, g Grant) error {
 	return nil
 }
 
-func (v *View) access(t Token, path string) bool {
+func (v *View) grants() []Grant {
+	var grants []Grant
 	v.s.mux.Lock()
-	defer v.s.mux.Unlock()
-
-	grants, ok := v.s.grants[v.fs.String()]
-	if !ok {
-		return false
+	for _, g := range v.s.grants[v.fs.String()] {
+		grants = append(grants, g)
 	}
-	for _, g := range grants {
+	v.s.mux.Unlock()
+	return grants
+}
+
+func (v *View) access(t Token, path string) bool {
+	for _, g := range v.grants() {
 		if g.Valid() && g.Verify(t) && g.Allows(path) {
 			return true
 		}
@@ -118,4 +151,34 @@ func (v View) ReadDir(t Token, path string) ([]os.FileInfo, error) {
 		return nil, ErrNoAccess
 	}
 	return v.fs.ReadDir(path)
+}
+
+func (v View) List(t Token) ([]string, error) {
+	grants := v.grants()
+
+	var files []string
+	if err := Walk(v.fs, "", func(path string, fi os.FileInfo, err error) error {
+		if err != nil {
+			if fi.IsDir() {
+				return filepath.SkipDir
+			}
+			return err
+		}
+
+		if fi.IsDir() {
+			return nil
+		}
+
+		for _, g := range grants {
+			if g.Valid() && g.Verify(t) && g.Allows(path) {
+				files = append(files, path)
+				return nil
+			}
+		}
+		fmt.Println("no access to %q", path)
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return files, nil
 }
