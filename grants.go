@@ -120,7 +120,7 @@ func WithDeadline(g Grant, deadline time.Time) Grant {
 	}
 }
 
-// WithTimeout returns a grant that will time out after the given duration.
+// WithTimeout returns a grant that will expire after the given duration.
 func WithTimeout(g Grant, timeout time.Duration) Grant {
 	return &expiresGrant{
 		Grant: g,
