@@ -11,8 +11,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"path/filepath"
 	"time"
@@ -39,11 +41,13 @@ func (s *Server) RegisterHandlers(root string) {
 	http.HandleFunc(path.Join("/", root, "/get"), s.get)
 	http.HandleFunc(path.Join("/", root, "/admin"), s.admin)
 	http.HandleFunc(path.Join("/", root, "/setadmin"), s.setAdmin)
+	http.HandleFunc(path.Join("/", root, "/share"), s.share)
+	http.HandleFunc(path.Join("/", root, "/setshare"), s.setShare)
 }
 
 func (s *Server) root(w http.ResponseWriter, r *http.Request) {
 	if !s.adminSet {
-		s.admin(w, r)
+		http.Redirect(w, r, "/admin", http.StatusSeeOther)
 		return
 	}
 	w.Write([]byte("<html>\n"))
@@ -53,14 +57,15 @@ func (s *Server) root(w http.ResponseWriter, r *http.Request) {
 </form>
 	`))
 	for _, f := range s.Visage.FileSystems() {
-		w.Write([]byte(fmt.Sprintf(`<a href="/list?fs=%s">%s</a><br>`, url.QueryEscape(f), f)))
+		w.Write([]byte(fmt.Sprintf(`<a href="/list?fs=%s">browse %s</a>  `, url.QueryEscape(f), f)))
+		w.Write([]byte(fmt.Sprintf(`<a href="/share?fs=%s">share %s</a><br>`, url.QueryEscape(f), f)))
 	}
 	w.Write([]byte("</html>\n"))
 }
 
 func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 	if !s.adminSet {
-		s.admin(w, r)
+		http.Redirect(w, r, "/admin", http.StatusSeeOther)
 		return
 	}
 	cookie, err := r.Cookie("auth-token-secret")
@@ -88,7 +93,7 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) get(w http.ResponseWriter, r *http.Request) {
 	if !s.adminSet {
-		s.admin(w, r)
+		http.Redirect(w, r, "/admin", http.StatusSeeOther)
 		return
 	}
 	cookie, err := r.Cookie("auth-token-secret")
@@ -176,6 +181,83 @@ func (s *Server) setAdmin(w http.ResponseWriter, r *http.Request) {
 	s.adminSet = true
 	s.adminUser = user
 	s.adminPass = pass
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) share(w http.ResponseWriter, r *http.Request) {
+	if !s.adminSet {
+		http.Redirect(w, r, "/admin", http.StatusSeeOther)
+		return
+	}
+	fs, err := url.QueryUnescape(r.URL.Query().Get("fs"))
+	if err != nil {
+		internalError(w, r, err)
+		return
+	}
+	fsys, err := s.Visage.FileSystem(fs)
+	if err != nil {
+		internalError(w, r, err)
+		return
+	}
+
+	w.Write([]byte("<html>"))
+	w.Write([]byte(`
+<form action="/setshare" method="POST">
+<input type="hidden" name="fs" value="` + fs + `">
+token: <input type="text" name="token"><br>
+admin: <input type="text" name="user"><br>
+pass: <input type="password" name="pass"><br>
+<input type="submit"><br>
+`))
+	if err := visage.Walk(fsys, "", func(path string, fi os.FileInfo, err error) error {
+		if err != nil {
+			if fi.IsDir() {
+				return filepath.SkipDir
+			}
+			return err
+		}
+		t := "file"
+		if fi.IsDir() {
+			t = "dir"
+		}
+		w.Write([]byte(fmt.Sprintf(`<input type="checkbox" name="%s" value="%s">%s</input><br>`, t, path, path)))
+		return nil
+	}); err != nil {
+		log.Print(err)
+	}
+	w.Write([]byte("<form>"))
+	w.Write([]byte("</html>"))
+}
+
+func (s *Server) setShare(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		internalError(w, r, err)
+		return
+	}
+	admin := r.PostFormValue("user")
+	pass := r.PostFormValue("pass")
+	if !s.adminSet || (s.adminUser != admin && s.adminPass != pass) {
+		internalError(w, r, errors.New("invalid admin key"))
+		return
+	}
+	token := r.PostFormValue("token")
+	fs := r.PostFormValue("fs")
+	if len(r.Form["file"]) > 0 {
+		g := visage.NewGrant()
+		g = visage.WithVerifyStaticToken(g, token)
+		g = visage.WithAllowFileList(g, r.Form["file"])
+		g = visage.WithTimeout(g, time.Minute*5)
+		s.Visage.AddGrant(fs, g)
+		fmt.Println("added file grants")
+	}
+	for _, d := range r.Form["dir"] {
+		fmt.Println("added dir grant", d)
+		g := visage.NewGrant()
+		g = visage.WithVerifyStaticToken(g, token)
+		g = visage.WithAllowPrefix(g, d)
+		g = visage.WithTimeout(g, time.Minute)
+		s.Visage.AddGrant(fs, g)
+	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 

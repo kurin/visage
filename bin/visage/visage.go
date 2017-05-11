@@ -43,10 +43,6 @@ func main() {
 		fmt.Println(err)
 		return
 	}
-	g := visage.NewGrant()
-	g = visage.WithAllowPrefix(g, "")
-	g = visage.WithVerifyStaticToken(g, "ok")
-	v.AddGrant(fs.String(), g)
 	w := web.Server{
 		Visage:    v,
 		SecretKey: *secret,

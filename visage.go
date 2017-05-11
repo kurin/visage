@@ -94,6 +94,17 @@ func (s *Share) AddFileSystem(fs FileSystem) error {
 	return nil
 }
 
+func (s *Share) FileSystem(fs string) (FileSystem, error) {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+
+	f, ok := s.fs[fs]
+	if !ok {
+		return nil, fmt.Errorf("visage: %s: file system not registered")
+	}
+	return f, nil
+}
+
 func (s *Share) View(fs string) (*View, error) {
 	s.mux.Lock()
 	defer s.mux.Unlock()
