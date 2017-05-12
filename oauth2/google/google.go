@@ -110,6 +110,9 @@ func Context(ctx context.Context, r *http.Request) context.Context {
 	if err := dec.Decode(acc); err != nil {
 		return ctx
 	}
+	if acc.Email == "" {
+		return ctx
+	}
 	return context.WithValue(ctx, oauthToken, acc)
 }
 
@@ -175,8 +178,11 @@ func loginReturnHandler(config *oauth2.Config) http.HandlerFunc {
 	}
 }
 
-// HasAccess reports whether the given context has login credentials.
-func HasAccess(ctx context.Context) bool {
-	_, ok := ctx.Value(oauthToken).(*access)
-	return ok
+// Show reports the value of the verified credentials, if any.
+func Show(ctx context.Context) (string, bool) {
+	acc, ok := ctx.Value(oauthToken).(*access)
+	if !ok {
+		return "", ok
+	}
+	return acc.Email, true
 }
