@@ -4,7 +4,7 @@ package google
 import (
 	"context"
 	"crypto/rand"
-	"encoding/hex"
+	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -120,7 +120,7 @@ func loginHandler(config *oauth2.Config) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		state := hex.Dump(b)
+		state := fmt.Sprintf("%x", sha1.Sum(b))
 		code, err := sc.Encode(stateCookie, state)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
