@@ -8,7 +8,6 @@
 package web
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -64,8 +63,6 @@ func (s *Server) RegisterHandlers(root string) {
 	http.HandleFunc(path.Join("/", root, "/"), s.root)
 	http.HandleFunc(path.Join("/", root, "/list"), s.list)
 	http.HandleFunc(path.Join("/", root, "/get"), s.get)
-	http.HandleFunc(path.Join("/", root, "/admin"), s.admin)
-	http.HandleFunc(path.Join("/", root, "/setadmin"), s.setAdmin)
 	http.HandleFunc(path.Join("/", root, "/share"), s.share)
 	http.HandleFunc(path.Join("/", root, "/setshare"), s.setShare)
 }
@@ -146,48 +143,6 @@ func (s *Server) get(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filepath.Base(file)))
 	io.Copy(w, f)
-}
-
-func (s *Server) admin(w http.ResponseWriter, r *http.Request) {
-	if !s.adminSet {
-		w.Write([]byte(`
-<html>
-<form action="/setadmin" method="POST">
-Username: <input type="text" name="user"><br>
-Password: <input type="password" name="pass"><br>
-Key: <input type="password" name="key"><br>
-<input type="submit"><br>
-</html>
-		`))
-		return
-	}
-	w.Write([]byte(`
-<html>
-<form action="/grants/insert" method="POST">
-	`))
-	//for
-	w.Write([]byte(`
-</form>
-</html>
-	`))
-}
-
-func (s *Server) setAdmin(w http.ResponseWriter, r *http.Request) {
-	if s.adminSet {
-		internalError(w, r, errors.New("admin creds already set"))
-		return
-	}
-	user := r.PostFormValue("user")
-	pass := r.PostFormValue("pass")
-	key := r.PostFormValue("key")
-	if key != s.SecretKey || key == "" {
-		internalError(w, r, errors.New("invalid admin key"))
-		return
-	}
-	s.adminSet = true
-	s.adminUser = user
-	s.adminPass = pass
-	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (s *Server) share(w http.ResponseWriter, r *http.Request) {
