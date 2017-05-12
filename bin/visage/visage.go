@@ -6,11 +6,15 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 
 	"golang.org/x/crypto/acme/autocert"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/github"
+	"golang.org/x/oauth2/google"
 
 	"github.com/kurin/visage"
 	"github.com/kurin/visage/web"
@@ -21,7 +25,33 @@ var (
 	port   = flag.String("port", "8080", "port to listen on")
 	domain = flag.String("domain", "", "domain (for TLS)")
 	secret = flag.String("secret", "", "initial admin secret")
+	gauth  = flag.String("google", "", "google's json credentials")
 )
+
+func ghcfg() *oauth2.Config {
+	id := os.Getenv("GH_CLIENT_ID")
+	secret := os.Getenv("GH_CLIENT_SECRET")
+	url := os.Getenv("GH_REDIRECT_URL")
+	if id == "" || secret == "" || url == "" {
+		return nil
+	}
+	return &oauth2.Config{
+		ClientID:     id,
+		ClientSecret: secret,
+		Endpoint:     github.Endpoint,
+		RedirectURL:  url,
+		Scopes:       []string{"user:email"},
+	}
+}
+
+func gcfg() *oauth2.Config {
+	cfg, err := ioutil.ReadFile(*gauth)
+	if err != nil {
+		return nil
+	}
+	c, _ := google.ConfigFromJSON(cfg, "email")
+	return c
+}
 
 func main() {
 	flag.Parse()
@@ -46,6 +76,8 @@ func main() {
 	w := web.Server{
 		Visage:    v,
 		SecretKey: *secret,
+		GitHub:    ghcfg(),
+		Google:    gcfg(),
 	}
 	w.RegisterHandlers("/")
 	if *domain != "" {

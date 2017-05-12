@@ -172,3 +172,9 @@ func loginReturnHandler(config *oauth2.Config) http.HandlerFunc {
 		http.Redirect(w, r, rURI, http.StatusTemporaryRedirect)
 	}
 }
+
+// HasAccess reports whether the given context has login credentials.
+func HasAccess(ctx context.Context) bool {
+	_, ok := ctx.Value(oauthToken).(*access)
+	return ok
+}

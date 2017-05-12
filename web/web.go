@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
@@ -20,11 +19,12 @@ import (
 	"path/filepath"
 	"time"
 
-	"golang.org/x/oauth2/google"
+	"golang.org/x/oauth2"
 
 	"github.com/gorilla/securecookie"
 	"github.com/kurin/visage"
-	goog "github.com/kurin/visage/oauth2/google"
+	"github.com/kurin/visage/oauth2/github"
+	"github.com/kurin/visage/oauth2/google"
 )
 
 var cookie *securecookie.SecureCookie
@@ -42,6 +42,9 @@ type Server struct {
 	Visage    *visage.Share
 	SecretKey string
 
+	Google *oauth2.Config
+	GitHub *oauth2.Config
+
 	adminSet bool
 
 	// This is, of course, terrible, but this is the terrible proof of concept
@@ -51,17 +54,12 @@ type Server struct {
 
 func (s *Server) RegisterHandlers(root string) {
 	s.adminSet = true
-	cfg, err := ioutil.ReadFile("/home/kurin/json.oauth2")
-	if err != nil {
-		panic(err)
+	if s.Google != nil {
+		google.RegisterHandlers(path.Join("/", root, "/goog"), s.Google)
 	}
-
-	c, err := google.ConfigFromJSON(cfg, "email")
-	if err != nil {
-		panic(err)
+	if s.GitHub != nil {
+		github.RegisterHandlers(path.Join("/", root, "/gh"), s.GitHub)
 	}
-	fmt.Println(c)
-	goog.RegisterHandlers(path.Join("/", root, "/goog"), c)
 	// TODO: accept a custom mux
 	http.HandleFunc(path.Join("/", root, "/"), s.root)
 	http.HandleFunc(path.Join("/", root, "/list"), s.list)
@@ -73,7 +71,16 @@ func (s *Server) RegisterHandlers(root string) {
 }
 
 func (s *Server) root(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	ctx = google.Context(ctx, r)
+	ctx = github.Context(ctx, r)
 	w.Write([]byte("<html>\n"))
+	if s.Google != nil && !google.HasAccess(ctx) {
+		w.Write([]byte(`<a href="/goog">google auth</a><br>`))
+	}
+	if s.GitHub != nil && !github.HasAccess(ctx) {
+		w.Write([]byte(`<a href="/gh">github auth</a><br>`))
+	}
 	w.Write([]byte(`
 <form action="/settoken" method="POST">
 <input type="password" name="auth">
@@ -88,7 +95,8 @@ func (s *Server) root(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	ctx = goog.Context(ctx, r)
+	ctx = google.Context(ctx, r)
+	ctx = github.Context(ctx, r)
 	fs := r.URL.Query().Get("fs")
 	fsys, err := s.Visage.View(fs)
 	if err != nil {
@@ -108,7 +116,8 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) get(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	ctx = goog.Context(ctx, r)
+	ctx = google.Context(ctx, r)
+	ctx = github.Context(ctx, r)
 	file, err := url.QueryUnescape(r.URL.Query().Get("file"))
 	if err != nil {
 		internalError(w, r, err)
@@ -237,15 +246,14 @@ func (s *Server) setShare(w http.ResponseWriter, r *http.Request) {
 	fs := r.PostFormValue("fs")
 	if len(r.Form["file"]) > 0 {
 		g := visage.NewGrant()
-		g = goog.VerifyEmails(g, []string{"kurin@google.com"})
+		g = google.VerifyEmails(g, []string{"kurin@google.com"})
 		g = visage.WithAllowFileList(g, r.Form["file"])
-		g = visage.WithTimeout(g, time.Minute*5)
+		g = visage.WithTimeout(g, time.Second*20)
 		s.Visage.AddGrant(fs, g)
-		fmt.Println("added file grants")
 	}
 	for _, d := range r.Form["dir"] {
-		fmt.Println("added dir grant", d)
 		g := visage.NewGrant()
+		g = github.VerifyLogins(g, []string{"kurin"})
 		g = visage.WithAllowPrefix(g, d)
 		g = visage.WithTimeout(g, time.Minute)
 		s.Visage.AddGrant(fs, g)
