@@ -38,19 +38,9 @@ func init() {
 	cookie = securecookie.New(hashKey, blockKey)
 }
 
-type AuthType int
-
-const (
-	AuthToken AuthType = iota
-	AuthGoogle
-)
-
 type Server struct {
 	Visage    *visage.Share
 	SecretKey string
-	Auth      AuthType
-
-	GoogleHandlers *goog.OAuthHandlers
 
 	adminSet bool
 
@@ -61,53 +51,25 @@ type Server struct {
 
 func (s *Server) RegisterHandlers(root string) {
 	s.adminSet = true
-	s.Auth = AuthGoogle
 	cfg, err := ioutil.ReadFile("/home/kurin/json.oauth2")
 	if err != nil {
 		panic(err)
 	}
+
 	c, err := google.ConfigFromJSON(cfg, "email")
 	if err != nil {
 		panic(err)
 	}
-	s.GoogleHandlers = &goog.OAuthHandlers{
-		Config:        c,
-		Cookie:        cookie,
-		InternalError: internalError,
-	}
+	fmt.Println(c)
+	goog.RegisterHandlers(path.Join("/", root, "/goog"), c)
 	// TODO: accept a custom mux
-	http.HandleFunc(path.Join("/", root, "/"), s.needAuth(s.root))
-	http.HandleFunc(path.Join("/", root, "/list"), s.needAuth(s.list))
-	http.HandleFunc(path.Join("/", root, "/get"), s.needAuth(s.get))
+	http.HandleFunc(path.Join("/", root, "/"), s.root)
+	http.HandleFunc(path.Join("/", root, "/list"), s.list)
+	http.HandleFunc(path.Join("/", root, "/get"), s.get)
 	http.HandleFunc(path.Join("/", root, "/admin"), s.admin)
 	http.HandleFunc(path.Join("/", root, "/setadmin"), s.setAdmin)
 	http.HandleFunc(path.Join("/", root, "/share"), s.share)
 	http.HandleFunc(path.Join("/", root, "/setshare"), s.setShare)
-	// oauth
-	http.HandleFunc(path.Join("/", root, "/login"), s.login)
-}
-
-func (s *Server) needAuth(f http.HandlerFunc) http.HandlerFunc {
-	if !s.adminSet {
-		return func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, "/admin", http.StatusSeeOther)
-		}
-	}
-	switch s.Auth {
-	case AuthGoogle:
-		return s.GoogleHandlers.NeedsAuth(f)
-	default:
-		return f
-	}
-}
-
-func (s *Server) login(w http.ResponseWriter, r *http.Request) {
-	switch s.Auth {
-	case AuthGoogle:
-		s.GoogleHandlers.LoginHandler(w, r)
-	default:
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-	}
 }
 
 func (s *Server) root(w http.ResponseWriter, r *http.Request) {
@@ -126,6 +88,7 @@ func (s *Server) root(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	ctx = goog.Context(ctx, r)
 	fs := r.URL.Query().Get("fs")
 	fsys, err := s.Visage.View(fs)
 	if err != nil {
@@ -144,6 +107,8 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) get(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	ctx = goog.Context(ctx, r)
 	file, err := url.QueryUnescape(r.URL.Query().Get("file"))
 	if err != nil {
 		internalError(w, r, err)
@@ -159,7 +124,6 @@ func (s *Server) get(w http.ResponseWriter, r *http.Request) {
 		internalError(w, r, err)
 		return
 	}
-	ctx := r.Context()
 	f, err := fsys.Open(ctx, file)
 	if err != nil {
 		internalError(w, r, err)
