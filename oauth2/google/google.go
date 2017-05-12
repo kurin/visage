@@ -55,7 +55,8 @@ func (g *grant) Verify(ctx context.Context) bool {
 	return (g.allowed[acc.Email] && acc.Verified) || g.Grant.Verify(ctx)
 }
 
-// VerifyEmails returns
+// VerifyEmails returns a grant that will verify users whose Google account is
+// tied to the address listed.
 func VerifyEmails(g visage.Grant, emails []string) visage.Grant {
 	n := &grant{
 		Grant:   g,
@@ -67,6 +68,9 @@ func VerifyEmails(g visage.Grant, emails []string) visage.Grant {
 	return n
 }
 
+// RegisterHandlers registers Google Sign-In handlers.  The given path
+// is the landing URL to begin the sign-in flow, and the return handler
+// is registered at the URL listed in the config.
 func RegisterHandlers(path string, config *oauth2.Config) error {
 	http.HandleFunc(path, loginHandler(config))
 	r, err := url.Parse(config.RedirectURL)
@@ -82,6 +86,8 @@ const (
 	stateCookie = "goog-oauth-state"
 )
 
+// Context returns a context that is updated with a Google Sign-In
+// token from the given HTTP request, if it exists.
 func Context(ctx context.Context, r *http.Request) context.Context {
 	if _, ok := ctx.Value(oauthToken).(*access); ok {
 		return ctx
