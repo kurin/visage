@@ -93,12 +93,15 @@ func (e *expiresGrant) Valid() bool {
 	return e.now().Before(e.exp) && e.Grant.Valid()
 }
 
+// Stubbed for testing.
+var timeFunc = time.Now
+
 // WithDeadline returns a grant that will expire once the deadline has passed.
 func WithDeadline(g Grant, deadline time.Time) Grant {
 	return &expiresGrant{
 		Grant: g,
 		exp:   deadline,
-		now:   time.Now,
+		now:   timeFunc,
 	}
 }
 
@@ -106,7 +109,7 @@ func WithDeadline(g Grant, deadline time.Time) Grant {
 func WithTimeout(g Grant, timeout time.Duration) Grant {
 	return &expiresGrant{
 		Grant: g,
-		exp:   time.Now().Add(timeout),
-		now:   time.Now,
+		exp:   timeFunc().Add(timeout),
+		now:   timeFunc,
 	}
 }
