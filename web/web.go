@@ -8,7 +8,9 @@
 package web
 
 import (
+	"context"
 	"fmt"
+	"html/template"
 	"io"
 	"log"
 	"net/http"
@@ -38,26 +40,21 @@ func init() {
 }
 
 type Server struct {
-	Visage    *visage.Share
-	SecretKey string
+	Visage *visage.Share
 
 	Google *oauth2.Config
 	GitHub *oauth2.Config
 
-	adminSet bool
-
-	// This is, of course, terrible, but this is the terrible proof of concept
-	// UI.  Don't persist these.
-	adminUser, adminPass string
+	SecretKey string
+	Admin     visage.Grant
 }
 
 func (s *Server) RegisterHandlers(root string) {
-	s.adminSet = true
 	if s.Google != nil {
-		google.RegisterHandlers(path.Join("/", root, "/goog"), s.Google)
+		google.RegisterHandlers(path.Join("/", root, "/google.login"), s.Google)
 	}
 	if s.GitHub != nil {
-		github.RegisterHandlers(path.Join("/", root, "/gh"), s.GitHub)
+		github.RegisterHandlers(path.Join("/", root, "/github.login"), s.GitHub)
 	}
 	// TODO: accept a custom mux
 	http.HandleFunc(path.Join("/", root, "/"), s.root)
@@ -67,33 +64,77 @@ func (s *Server) RegisterHandlers(root string) {
 	http.HandleFunc(path.Join("/", root, "/setshare"), s.setShare)
 }
 
-func (s *Server) root(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	ctx = google.Context(ctx, r)
-	ctx = github.Context(ctx, r)
-	w.Write([]byte("<html>\n"))
-	if s.Google != nil && !google.HasAccess(ctx) {
-		w.Write([]byte(`<a href="/goog">google auth</a><br>`))
-	}
-	if s.GitHub != nil && !github.HasAccess(ctx) {
-		w.Write([]byte(`<a href="/gh">github auth</a><br>`))
-	}
-	w.Write([]byte(`
-<form action="/settoken" method="POST">
-<input type="password" name="auth">
-</form>
-	`))
+type fs struct {
+	Name string
+}
+
+type auth struct {
+	Path       string
+	Name       string
+	Logged     bool
+	Credential string
+}
+
+type rootPage struct {
+	FileSystems []fs
+	Auths       []auth
+}
+
+func (s *Server) rootPage(r *http.Request) rootPage {
+	p := rootPage{}
+
 	for _, f := range s.Visage.FileSystems() {
-		w.Write([]byte(fmt.Sprintf(`<a href="/list?fs=%s">browse %s</a>  `, url.QueryEscape(f), f)))
-		w.Write([]byte(fmt.Sprintf(`<a href="/share?fs=%s">share %s</a><br>`, url.QueryEscape(f), f)))
+		p.FileSystems = append(p.FileSystems, fs{Name: f})
 	}
-	w.Write([]byte("</html>\n"))
+
+	ctx := s.Context(r)
+
+	if s.Google != nil {
+		a := auth{
+			Path: "/google.login",
+			Name: "The Googles",
+		}
+		a.Credential, a.Logged = google.Show(ctx)
+		p.Auths = append(p.Auths, a)
+	}
+	if s.GitHub != nil {
+		a := auth{
+			Path: "/github.login",
+			Name: "GitHubris",
+		}
+		a.Credential, a.Logged = github.Show(ctx)
+		p.Auths = append(p.Auths, a)
+	}
+	return p
+}
+
+func (s *Server) root(w http.ResponseWriter, r *http.Request) {
+	p := s.rootPage(r)
+	temp, err := template.ParseFiles("web/static/visage.html")
+	if err != nil {
+		panic(err)
+	}
+	if err := temp.Execute(w, p); err != nil {
+		panic(err)
+	}
+}
+
+func (s *Server) Context(r *http.Request) context.Context {
+	ctx := r.Context()
+	switch {
+	case s.Google != nil:
+		ctx = google.Context(ctx, r)
+		fallthrough
+	case s.GitHub != nil:
+		ctx = github.Context(ctx, r)
+		fallthrough
+	default:
+	}
+	return ctx
 }
 
 func (s *Server) list(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	ctx = google.Context(ctx, r)
-	ctx = github.Context(ctx, r)
+	ctx := s.Context(r)
 	fs := r.URL.Query().Get("fs")
 	fsys, err := s.Visage.View(fs)
 	if err != nil {
@@ -112,9 +153,7 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) get(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	ctx = google.Context(ctx, r)
-	ctx = github.Context(ctx, r)
+	ctx := s.Context(r)
 	file, err := url.QueryUnescape(r.URL.Query().Get("file"))
 	if err != nil {
 		internalError(w, r, err)
@@ -218,4 +257,32 @@ func (s *Server) setShare(w http.ResponseWriter, r *http.Request) {
 
 func internalError(w http.ResponseWriter, r *http.Request, err error) {
 	http.Error(w, "500 "+err.Error(), http.StatusInternalServerError)
+}
+
+type Grant struct {
+	Provider   string    `json:"provider"`
+	Expires    time.Time `json:"expires"`
+	Title      string    `json:"title"`
+	AllowPfx   []string  `json:"allow_prefix"`
+	AllowFiles []string  `json:"allow_files"`
+	Values     []string  `json:"values"`
+}
+
+func (g Grant) Make() (visage.Grant, visage.CancelFunc) {
+	n := visage.NewGrant()
+	switch g.Provider {
+	case "google":
+		n = google.VerifyEmails(n, g.Values)
+	case "github":
+		n = github.VerifyLogins(n, g.Values)
+	}
+	if !g.Expires.IsZero() {
+		n = visage.WithDeadline(n, g.Expires)
+	}
+	return visage.WithCancel(n)
+}
+
+type FileSystem struct {
+	Type   string   `json:"type"`
+	Grants []string `json:"grant_names"`
 }

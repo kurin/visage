@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>what</title>
+</head>
+
+<body>
+<h2>Log in with</h2>
+{{range .Auths}}
+{{if not .Logged}}<a href="{{ .Path }}">{{ .Name }}</a>{{end}}
+{{end}}
+<h2>Logged in with</h2>
+{{range .Auths}}
+{{if .Logged}}{{ .Name }} as {{ .Credential }}<br>{{end}}
+{{end}}
+<h2>File Systems</h2>
+{{range .FileSystems}}
+<a href="/browse?fs={{ .Name | urlquery }}">{{ .Name }}</a><br>
+{{end}}
+</body>
+</html>
