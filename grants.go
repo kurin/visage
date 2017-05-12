@@ -19,30 +19,6 @@ func NewGrant() Grant {
 	return nullGrant{}
 }
 
-type staticGrant struct {
-	Grant
-	token string
-}
-
-// unexported context key
-type ctxKey int
-
-const staticKey ctxKey = 0
-
-func (s staticGrant) Verify(ctx context.Context) bool {
-	token, ok := ctx.Value(staticKey).(string)
-	if !ok {
-		return false
-	}
-	return token == s.token || s.Grant.Verify(ctx)
-}
-
-// WithStaticToken wraps the parent context with a new context that provides
-// static token authentication.
-func WithStaticToken(ctx context.Context, token string) context.Context {
-	return context.WithValue(ctx, staticKey, token)
-}
-
 type fileListGrant struct {
 	Grant
 	files map[string]bool
