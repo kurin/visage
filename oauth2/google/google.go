@@ -57,7 +57,7 @@ func (g *grant) Verify(ctx context.Context) bool {
 	return g.allowed[acc.Email] || g.Grant.Verify(ctx)
 }
 
-func VerifyEmails(g visage.Grant, emails []string) *grant {
+func VerifyEmails(g visage.Grant, emails []string) visage.Grant {
 	n := &grant{
 		Grant:   g,
 		allowed: make(map[string]bool),
