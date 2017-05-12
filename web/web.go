@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
@@ -19,12 +20,37 @@ import (
 	"path/filepath"
 	"time"
 
+	"golang.org/x/oauth2/google"
+
+	"github.com/gorilla/securecookie"
 	"github.com/kurin/visage"
+	goog "github.com/kurin/visage/oauth2/google"
+)
+
+var cookie *securecookie.SecureCookie
+
+func init() {
+	hashKey := securecookie.GenerateRandomKey(64)
+	blockKey := securecookie.GenerateRandomKey(32)
+	if hashKey == nil || blockKey == nil {
+		panic("couldn't generate random key")
+	}
+	cookie = securecookie.New(hashKey, blockKey)
+}
+
+type AuthType int
+
+const (
+	AuthToken AuthType = iota
+	AuthGoogle
 )
 
 type Server struct {
 	Visage    *visage.Share
 	SecretKey string
+	Auth      AuthType
+
+	GoogleHandlers *goog.OAuthHandlers
 
 	adminSet bool
 
@@ -34,22 +60,57 @@ type Server struct {
 }
 
 func (s *Server) RegisterHandlers(root string) {
+	s.adminSet = true
+	s.Auth = AuthGoogle
+	cfg, err := ioutil.ReadFile("/home/kurin/json.oauth2")
+	if err != nil {
+		panic(err)
+	}
+	c, err := google.ConfigFromJSON(cfg, "email")
+	if err != nil {
+		panic(err)
+	}
+	s.GoogleHandlers = &goog.OAuthHandlers{
+		Config:        c,
+		Cookie:        cookie,
+		InternalError: internalError,
+	}
 	// TODO: accept a custom mux
-	http.HandleFunc(path.Join("/", root, "/"), s.root)
-	http.HandleFunc(path.Join("/", root, "/list"), s.list)
-	http.HandleFunc(path.Join("/", root, "/settoken"), s.setToken)
-	http.HandleFunc(path.Join("/", root, "/get"), s.get)
+	http.HandleFunc(path.Join("/", root, "/"), s.needAuth(s.root))
+	http.HandleFunc(path.Join("/", root, "/list"), s.needAuth(s.list))
+	http.HandleFunc(path.Join("/", root, "/get"), s.needAuth(s.get))
 	http.HandleFunc(path.Join("/", root, "/admin"), s.admin)
 	http.HandleFunc(path.Join("/", root, "/setadmin"), s.setAdmin)
 	http.HandleFunc(path.Join("/", root, "/share"), s.share)
 	http.HandleFunc(path.Join("/", root, "/setshare"), s.setShare)
+	// oauth
+	http.HandleFunc(path.Join("/", root, "/login"), s.login)
+}
+
+func (s *Server) needAuth(f http.HandlerFunc) http.HandlerFunc {
+	if !s.adminSet {
+		return func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "/admin", http.StatusSeeOther)
+		}
+	}
+	switch s.Auth {
+	case AuthGoogle:
+		return s.GoogleHandlers.NeedsAuth(f)
+	default:
+		return f
+	}
+}
+
+func (s *Server) login(w http.ResponseWriter, r *http.Request) {
+	switch s.Auth {
+	case AuthGoogle:
+		s.GoogleHandlers.LoginHandler(w, r)
+	default:
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+	}
 }
 
 func (s *Server) root(w http.ResponseWriter, r *http.Request) {
-	if !s.adminSet {
-		http.Redirect(w, r, "/admin", http.StatusSeeOther)
-		return
-	}
 	w.Write([]byte("<html>\n"))
 	w.Write([]byte(`
 <form action="/settoken" method="POST">
@@ -64,16 +125,7 @@ func (s *Server) root(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) list(w http.ResponseWriter, r *http.Request) {
-	if !s.adminSet {
-		http.Redirect(w, r, "/admin", http.StatusSeeOther)
-		return
-	}
-	cookie, err := r.Cookie("auth-token-secret")
-	if err != nil {
-		internalError(w, r, err)
-		return
-	}
-	auth := cookie.Value
+	ctx := r.Context()
 	fs := r.URL.Query().Get("fs")
 	fsys, err := s.Visage.View(fs)
 	if err != nil {
@@ -81,27 +133,17 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Write([]byte("<html>\n"))
-	list, err := fsys.List(visage.StaticToken(auth))
+	list, err := fsys.List(ctx)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
 	for _, f := range list {
-		w.Write([]byte(fmt.Sprintf(`<a href="/get?fs=%s&file=%s&auth=%s">%s</a><br>`, url.QueryEscape(fs), url.QueryEscape(f), auth, f)))
+		w.Write([]byte(fmt.Sprintf(`<a href="/get?fs=%s&file=%s">%s</a><br>`, url.QueryEscape(fs), url.QueryEscape(f), f)))
 	}
 }
 
 func (s *Server) get(w http.ResponseWriter, r *http.Request) {
-	if !s.adminSet {
-		http.Redirect(w, r, "/admin", http.StatusSeeOther)
-		return
-	}
-	cookie, err := r.Cookie("auth-token-secret")
-	if err != nil {
-		internalError(w, r, err)
-		return
-	}
-	auth := cookie.Value
 	file, err := url.QueryUnescape(r.URL.Query().Get("file"))
 	if err != nil {
 		internalError(w, r, err)
@@ -117,8 +159,8 @@ func (s *Server) get(w http.ResponseWriter, r *http.Request) {
 		internalError(w, r, err)
 		return
 	}
-	t := visage.StaticToken(auth)
-	f, err := fsys.Open(t, file)
+	ctx := r.Context()
+	f, err := fsys.Open(ctx, file)
 	if err != nil {
 		internalError(w, r, err)
 		return
@@ -157,15 +199,6 @@ Key: <input type="password" name="key"><br>
 	`))
 }
 
-func (s *Server) setToken(w http.ResponseWriter, r *http.Request) {
-	auth := r.PostFormValue("auth")
-	http.SetCookie(w, &http.Cookie{
-		Name:  "auth-token-secret",
-		Value: auth,
-	})
-	http.Redirect(w, r, "/", http.StatusSeeOther)
-}
-
 func (s *Server) setAdmin(w http.ResponseWriter, r *http.Request) {
 	if s.adminSet {
 		internalError(w, r, errors.New("admin creds already set"))
@@ -185,10 +218,6 @@ func (s *Server) setAdmin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) share(w http.ResponseWriter, r *http.Request) {
-	if !s.adminSet {
-		http.Redirect(w, r, "/admin", http.StatusSeeOther)
-		return
-	}
 	fs, err := url.QueryUnescape(r.URL.Query().Get("fs"))
 	if err != nil {
 		internalError(w, r, err)
@@ -234,17 +263,17 @@ func (s *Server) setShare(w http.ResponseWriter, r *http.Request) {
 		internalError(w, r, err)
 		return
 	}
-	admin := r.PostFormValue("user")
-	pass := r.PostFormValue("pass")
-	if !s.adminSet || (s.adminUser != admin && s.adminPass != pass) {
-		internalError(w, r, errors.New("invalid admin key"))
-		return
-	}
-	token := r.PostFormValue("token")
+	//admin := r.PostFormValue("user")
+	//pass := r.PostFormValue("pass")
+	//if !s.adminSet || (s.adminUser != admin && s.adminPass != pass) {
+	//	internalError(w, r, errors.New("invalid admin key"))
+	//	return
+	//}
+	//token := r.PostFormValue("token")
 	fs := r.PostFormValue("fs")
 	if len(r.Form["file"]) > 0 {
 		g := visage.NewGrant()
-		g = visage.WithVerifyStaticToken(g, token)
+		g = goog.VerifyEmails(g, []string{"kurin@google.com"})
 		g = visage.WithAllowFileList(g, r.Form["file"])
 		g = visage.WithTimeout(g, time.Minute*5)
 		s.Visage.AddGrant(fs, g)
@@ -253,7 +282,6 @@ func (s *Server) setShare(w http.ResponseWriter, r *http.Request) {
 	for _, d := range r.Form["dir"] {
 		fmt.Println("added dir grant", d)
 		g := visage.NewGrant()
-		g = visage.WithVerifyStaticToken(g, token)
 		g = visage.WithAllowPrefix(g, d)
 		g = visage.WithTimeout(g, time.Minute)
 		s.Visage.AddGrant(fs, g)
