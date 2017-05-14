@@ -20,17 +20,15 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 
 	"golang.org/x/crypto/acme/autocert"
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/github"
-	"golang.org/x/oauth2/google"
 
 	"github.com/kurin/visage"
+	"github.com/kurin/visage/oauth2/github"
+	"github.com/kurin/visage/oauth2/google"
 	"github.com/kurin/visage/web"
 )
 
@@ -42,29 +40,32 @@ var (
 	gauth  = flag.String("google", "", "google's json credentials")
 )
 
-func ghcfg() *oauth2.Config {
+func ghcfg() *github.Config {
 	id := os.Getenv("GH_CLIENT_ID")
 	secret := os.Getenv("GH_CLIENT_SECRET")
 	url := os.Getenv("GH_REDIRECT_URL")
 	if id == "" || secret == "" || url == "" {
 		return nil
 	}
-	return &oauth2.Config{
+	return &github.Config{
 		ClientID:     id,
 		ClientSecret: secret,
-		Endpoint:     github.Endpoint,
-		RedirectURL:  url,
-		Scopes:       []string{"user:email"},
+		RedirectURI:  url,
 	}
 }
 
-func gcfg() *oauth2.Config {
-	cfg, err := ioutil.ReadFile(*gauth)
-	if err != nil {
+func gcfg() *google.Config {
+	id := os.Getenv("GOOG_CLIENT_ID")
+	secret := os.Getenv("GOOG_CLIENT_SECRET")
+	url := os.Getenv("GOOG_REDIRECT_URL")
+	if id == "" || secret == "" || url == "" {
 		return nil
 	}
-	c, _ := google.ConfigFromJSON(cfg, "email")
-	return c
+	return &google.Config{
+		ClientID:     id,
+		ClientSecret: secret,
+		RedirectURI:  url,
+	}
 }
 
 func main() {

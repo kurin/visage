@@ -34,30 +34,16 @@ import (
 	"path/filepath"
 	"time"
 
-	"golang.org/x/oauth2"
-
-	"github.com/gorilla/securecookie"
 	"github.com/kurin/visage"
 	"github.com/kurin/visage/oauth2/github"
 	"github.com/kurin/visage/oauth2/google"
 )
 
-var cookie *securecookie.SecureCookie
-
-func init() {
-	hashKey := securecookie.GenerateRandomKey(64)
-	blockKey := securecookie.GenerateRandomKey(32)
-	if hashKey == nil || blockKey == nil {
-		panic("couldn't generate random key")
-	}
-	cookie = securecookie.New(hashKey, blockKey)
-}
-
 type Server struct {
 	Visage *visage.Share
 
-	Google *oauth2.Config
-	GitHub *oauth2.Config
+	Google *google.Config
+	GitHub *github.Config
 
 	SecretKey string
 	Admin     visage.Grant
@@ -65,10 +51,10 @@ type Server struct {
 
 func (s *Server) RegisterHandlers(root string) {
 	if s.Google != nil {
-		google.RegisterHandlers(path.Join("/", root, "/google.login"), s.Google)
+		s.Google.RegisterHandlers(path.Join("/", root, "/google.login"))
 	}
 	if s.GitHub != nil {
-		github.RegisterHandlers(path.Join("/", root, "/github.login"), s.GitHub)
+		s.GitHub.RegisterHandlers(path.Join("/", root, "/github.login"))
 	}
 	// TODO: accept a custom mux
 	http.HandleFunc(path.Join("/", root, "/"), s.root)
@@ -122,15 +108,19 @@ func (s *Server) rootPage(r *http.Request) rootPage {
 	return p
 }
 
-func (s *Server) root(w http.ResponseWriter, r *http.Request) {
-	p := s.rootPage(r)
-	temp, err := template.ParseFiles("web/static/visage.html")
+func servePage(w http.ResponseWriter, r *http.Request, tfile string, dot interface{}) {
+	temp, err := template.ParseFiles(tfile)
 	if err != nil {
 		panic(err)
 	}
-	if err := temp.Execute(w, p); err != nil {
+	if err := temp.Execute(w, dot); err != nil {
 		panic(err)
 	}
+}
+
+func (s *Server) root(w http.ResponseWriter, r *http.Request) {
+	p := s.rootPage(r)
+	servePage(w, r, "web/static/visage.html", p)
 }
 
 func (s *Server) Context(r *http.Request) context.Context {
@@ -147,6 +137,11 @@ func (s *Server) Context(r *http.Request) context.Context {
 	return ctx
 }
 
+type listPage struct {
+	FileSystem string
+	Files      []string
+}
+
 func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 	ctx := s.Context(r)
 	fs := r.URL.Query().Get("fs")
@@ -155,15 +150,16 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	w.Write([]byte("<html>\n"))
 	list, err := fsys.List(ctx)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	for _, f := range list {
-		w.Write([]byte(fmt.Sprintf(`<a href="/get?fs=%s&file=%s">%s</a><br>`, url.QueryEscape(fs), url.QueryEscape(f), f)))
+	p := &listPage{
+		FileSystem: fs,
+		Files:      list,
 	}
+	servePage(w, r, "web/static/list.html", p)
 }
 
 func (s *Server) get(w http.ResponseWriter, r *http.Request) {

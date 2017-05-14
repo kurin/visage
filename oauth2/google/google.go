@@ -28,6 +28,7 @@ import (
 	"github.com/kurin/visage"
 
 	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 )
 
 var sc *securecookie.SecureCookie
@@ -82,16 +83,29 @@ func VerifyEmails(g visage.Grant, emails []string) visage.Grant {
 	return n
 }
 
+type Config struct {
+	ClientID     string
+	ClientSecret string
+	RedirectURI  string
+}
+
 // RegisterHandlers registers Google Sign-In handlers.  The given path
 // is the landing URL to begin the sign-in flow, and the return handler
 // is registered at the URL listed in the config.
-func RegisterHandlers(path string, config *oauth2.Config) error {
-	http.HandleFunc(path, loginHandler(config))
-	r, err := url.Parse(config.RedirectURL)
+func (c *Config) RegisterHandlers(path string) error {
+	cfg := &oauth2.Config{
+		ClientID:     c.ClientID,
+		ClientSecret: c.ClientSecret,
+		Endpoint:     google.Endpoint,
+		Scopes:       []string{"email"},
+		RedirectURL:  c.RedirectURI,
+	}
+	http.HandleFunc(path, loginHandler(cfg))
+	r, err := url.Parse(c.RedirectURI)
 	if err != nil {
 		return err
 	}
-	http.HandleFunc(r.Path, loginReturnHandler(config))
+	http.HandleFunc(r.Path, loginReturnHandler(cfg))
 	return nil
 }
 
