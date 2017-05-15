@@ -4,11 +4,20 @@
 <body>
 <form action="/setshare" method="POST">
 <input type="submit">
+<hr>
 <input type="hidden" name="fs" value="{{ .FS }}">
-grant to <input type="text" name="grant"><br>
+grant:<br>
+type: <select name="grant-type">
+{{ range .GrantTypes }}<option>{{ . }}</option>{{ end }}
+</select><br>
+principal: <input type="text" name="grant-principal"><br>
+ttl: <input type="text" name="grant-ttl"></br>
+<hr>
+<select name="files">
 {{ range .Files }}
-<input type="checkbox" value="{{ .Name }}" name="{{ .Type }}">{{ .Name }}</input><br>
+<option>{{ . }}</option>
 {{ end }}
+</select>
 </form>
 </body>
 </html>

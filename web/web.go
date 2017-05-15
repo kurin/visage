@@ -63,6 +63,8 @@ func (s *Server) RegisterHandlers(root string) {
 	http.HandleFunc(path.Join("/", root, "/get"), s.get)
 	http.HandleFunc(path.Join("/", root, "/share"), s.share)
 	http.HandleFunc(path.Join("/", root, "/setshare"), s.setShare)
+	http.HandleFunc(path.Join("/", root, "/fs"), s.fs)
+	http.HandleFunc(path.Join("/", root, "/setfs"), s.setFS)
 }
 
 type fs struct {
@@ -191,17 +193,18 @@ func (s *Server) get(w http.ResponseWriter, r *http.Request) {
 	io.Copy(w, f)
 }
 
-type file struct {
-	Name string
-	Type string
-}
-
 type sharePage struct {
-	FS    string
-	Files []file
+	FS         string
+	GrantTypes []string
+	Files      []string
 }
 
 func (s *Server) share(w http.ResponseWriter, r *http.Request) {
+	ctx := s.Context(r)
+	if !s.Admin.Verify(ctx) {
+		http.Error(w, "you're not an admin", http.StatusUnauthorized)
+		return
+	}
 	fs, err := url.QueryUnescape(r.URL.Query().Get("fs"))
 	if err != nil {
 		internalError(w, r, err)
@@ -216,18 +219,23 @@ func (s *Server) share(w http.ResponseWriter, r *http.Request) {
 	p := sharePage{
 		FS: fs,
 	}
+	if s.Google != nil {
+		p.GrantTypes = append(p.GrantTypes, "google")
+	}
+	if s.GitHub != nil {
+		p.GrantTypes = append(p.GrantTypes, "github")
+	}
 	if err := visage.Walk(fsys, "", func(path string, fi os.FileInfo, err error) error {
 		if err != nil {
-			if fi.IsDir() {
+			if fi != nil && fi.IsDir() {
 				return filepath.SkipDir
 			}
 			return err
 		}
-		t := "file"
 		if fi.IsDir() {
-			t = "dir"
+			return nil
 		}
-		p.Files = append(p.Files, file{Name: path, Type: t})
+		p.Files = append(p.Files, path)
 		return nil
 	}); err != nil {
 		log.Print(err)
@@ -236,26 +244,60 @@ func (s *Server) share(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) setShare(w http.ResponseWriter, r *http.Request) {
-	//ctx := s.Context(r)
+	ctx := s.Context(r)
+	if !s.Admin.Verify(ctx) {
+		http.Error(w, "you're not an admin", http.StatusUnauthorized)
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		internalError(w, r, err)
 		return
 	}
-	grant := r.PostFormValue("grant")
-	gr, err := ParseGrant(grant)
+	gtype := r.PostFormValue("grant-type")
+	gprinc := r.PostFormValue("grant-principal")
+	gttl := r.PostFormValue("grant-ttl")
+	g := visage.NewGrant()
+	switch gtype {
+	case "google":
+		g = google.VerifyEmail(g, gprinc)
+	case "github":
+		g = github.VerifyLogin(g, gprinc)
+	}
+	ttl, err := time.ParseDuration(gttl)
 	if err != nil {
 		internalError(w, r, err)
 		return
 	}
-	g, _ := gr.Make()
+	g = visage.WithTimeout(g, ttl)
 	fs := r.PostFormValue("fs")
-	if len(r.Form["file"]) > 0 {
-		g = visage.WithAllowFileList(g, r.Form["file"])
-	}
-	for _, d := range r.Form["dir"] {
-		g = visage.WithAllowPrefix(g, d)
+	if len(r.Form["files"]) > 0 {
+		g = visage.WithAllowFileList(g, r.Form["files"])
 	}
 	s.Visage.AddGrant(fs, g)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) fs(w http.ResponseWriter, r *http.Request) {
+	ctx := s.Context(r)
+	if !s.Admin.Verify(ctx) {
+		http.Error(w, "you're not an admin", http.StatusUnauthorized)
+		return
+	}
+	servePage(w, r, "web/static/fs.html", nil)
+}
+
+func (s *Server) setFS(w http.ResponseWriter, r *http.Request) {
+	ctx := s.Context(r)
+	if !s.Admin.Verify(ctx) {
+		http.Error(w, "you're not an admin", http.StatusUnauthorized)
+		return
+	}
+	fs := r.PostFormValue("fs")
+	fsys := visage.Directory(fs)
+	if err := s.Visage.AddFileSystem(fsys); err != nil {
+		internalError(w, r, err)
+		return
+	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 

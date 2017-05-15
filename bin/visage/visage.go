@@ -33,7 +33,6 @@ import (
 )
 
 var (
-	root   = flag.String("root", "", "serve the given directory")
 	port   = flag.String("port", "8080", "port to listen on")
 	domain = flag.String("domain", "", "domain (for TLS)")
 	admin  = flag.String("admin", "", "admin user specification")
@@ -69,10 +68,7 @@ func gcfg() *google.Config {
 
 func main() {
 	flag.Parse()
-	if *root == "" {
-		fmt.Println("set --root")
-		return
-	}
+
 	var certManager autocert.Manager
 	if *domain != "" {
 		certManager = autocert.Manager{
@@ -81,12 +77,6 @@ func main() {
 			Cache:      autocert.DirCache(os.TempDir()),
 		}
 	}
-	fs := visage.Directory(*root)
-	v := visage.New()
-	if err := v.AddFileSystem(fs); err != nil {
-		fmt.Println(err)
-		return
-	}
 	a, err := web.ParseGrant(*admin)
 	if err != nil {
 		fmt.Println(err)
@@ -94,7 +84,7 @@ func main() {
 	}
 	ag, _ := a.Make()
 	w := web.Server{
-		Visage: v,
+		Visage: visage.New(),
 		GitHub: ghcfg(),
 		Google: gcfg(),
 		Admin:  ag,
