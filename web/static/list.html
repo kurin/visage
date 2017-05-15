@@ -1,7 +1,11 @@
 <!doctype HTML>
 <html>
 <head>
+<title>{{ .FileSystem }}</title>
 </head>
-<body>
+<body>{{ $x := .FileSystem }}
+{{ range .Files }}
+<a href="/get?file={{ . }}&fs={{ $x }}">{{ . }}</a><br>
+{{ end }}
 </body>
 </html>

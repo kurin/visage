@@ -146,12 +146,12 @@ type listPage struct {
 func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 	ctx := s.Context(r)
 	fs := r.URL.Query().Get("fs")
-	fsys, err := s.Visage.View(fs)
+	view, err := s.Visage.View(fs)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	list, err := fsys.List(ctx)
+	list, err := view.List(ctx)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -293,6 +293,7 @@ func parseGrant(s string) (*Grant, error) {
 			g.Expires = time.Now().Add(d)
 		}
 	}
+	fmt.Println(g)
 	return g, nil
 }
 

@@ -15,7 +15,8 @@
 {{end}}
 <h2>File Systems</h2>
 {{range .FileSystems}}
-<a href="/browse?fs={{ .Name | urlquery }}">{{ .Name }}</a><br>
+<a href="/share?fs={{ .Name | urlquery }}">share {{ .Name }}</a> -
+<a href="/list?fs={{ .Name | urlquery }}">visit {{ .Name }}</a><br>
 {{end}}
 </body>
 </html>

@@ -7,7 +7,7 @@
 <input type="hidden" name="fs" value="{{ .FS }}">
 grant to <input type="text" name="grant"><br>
 {{ range .Files }}
-<input type="checkbox" name="{{ .Name }}" value="{{ .Type }}">{{ .Name }}</input><br>
+<input type="checkbox" value="{{ .Name }}" name="{{ .Type }}">{{ .Name }}</input><br>
 {{ end }}
 </form>
 </body>
