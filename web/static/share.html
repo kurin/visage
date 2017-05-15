@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<head></head>
+<body>
+<form action="/setshare" method="POST">
+<input type="submit">
+<input type="hidden" name="fs" value="{{ .FS }}">
+grant to <input type="text" name="grant"><br>
+{{ range .Files }}
+<input type="checkbox" name="{{ .Name }}" value="{{ .Type }}">{{ .Name }}</input><br>
+{{ end }}
+</form>
+</body>
+</html>

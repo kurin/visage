@@ -32,6 +32,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/kurin/visage"
@@ -194,6 +195,16 @@ func (s *Server) get(w http.ResponseWriter, r *http.Request) {
 	io.Copy(w, f)
 }
 
+type file struct {
+	Name string
+	Type string
+}
+
+type sharePage struct {
+	FS    string
+	Files []file
+}
+
 func (s *Server) share(w http.ResponseWriter, r *http.Request) {
 	fs, err := url.QueryUnescape(r.URL.Query().Get("fs"))
 	if err != nil {
@@ -206,15 +217,9 @@ func (s *Server) share(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Write([]byte("<html>"))
-	w.Write([]byte(`
-<form action="/setshare" method="POST">
-<input type="hidden" name="fs" value="` + fs + `">
-token: <input type="text" name="token"><br>
-admin: <input type="text" name="user"><br>
-pass: <input type="password" name="pass"><br>
-<input type="submit"><br>
-`))
+	p := sharePage{
+		FS: fs,
+	}
 	if err := visage.Walk(fsys, "", func(path string, fi os.FileInfo, err error) error {
 		if err != nil {
 			if fi.IsDir() {
@@ -226,47 +231,69 @@ pass: <input type="password" name="pass"><br>
 		if fi.IsDir() {
 			t = "dir"
 		}
-		w.Write([]byte(fmt.Sprintf(`<input type="checkbox" name="%s" value="%s">%s</input><br>`, t, path, path)))
+		p.Files = append(p.Files, file{Name: path, Type: t})
 		return nil
 	}); err != nil {
 		log.Print(err)
 	}
-	w.Write([]byte("<form>"))
-	w.Write([]byte("</html>"))
+	servePage(w, r, "web/static/share.html", p)
 }
 
 func (s *Server) setShare(w http.ResponseWriter, r *http.Request) {
+	//ctx := s.Context(r)
 	if err := r.ParseForm(); err != nil {
 		internalError(w, r, err)
 		return
 	}
-	//admin := r.PostFormValue("user")
-	//pass := r.PostFormValue("pass")
-	//if !s.adminSet || (s.adminUser != admin && s.adminPass != pass) {
-	//	internalError(w, r, errors.New("invalid admin key"))
-	//	return
-	//}
-	//token := r.PostFormValue("token")
+	grant := r.PostFormValue("grant")
+	gr, err := parseGrant(grant)
+	if err != nil {
+		internalError(w, r, err)
+		return
+	}
+	g, _ := gr.Make()
 	fs := r.PostFormValue("fs")
 	if len(r.Form["file"]) > 0 {
-		g := visage.NewGrant()
-		g = google.VerifyEmails(g, []string{"kurin@google.com"})
 		g = visage.WithAllowFileList(g, r.Form["file"])
-		g = visage.WithTimeout(g, time.Second*20)
-		s.Visage.AddGrant(fs, g)
 	}
 	for _, d := range r.Form["dir"] {
-		g := visage.NewGrant()
-		g = github.VerifyLogins(g, []string{"kurin"})
 		g = visage.WithAllowPrefix(g, d)
-		g = visage.WithTimeout(g, time.Minute)
-		s.Visage.AddGrant(fs, g)
 	}
+	s.Visage.AddGrant(fs, g)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func internalError(w http.ResponseWriter, r *http.Request, err error) {
 	http.Error(w, "500 "+err.Error(), http.StatusInternalServerError)
+}
+
+func parseGrant(s string) (*Grant, error) {
+	u, err := url.Parse(s)
+	if err != nil {
+		return nil, err
+	}
+
+	g := &Grant{}
+	g.Provider = u.Scheme
+	g.Values = []string{u.Host}
+
+	for _, ent := range strings.Split(u.Path, "/") {
+		if strings.Index(ent, "=") < 0 {
+			continue
+		}
+		parts := strings.SplitN(ent, "=", 2)
+		key := parts[0]
+		value := parts[1]
+		switch key {
+		case "ttl":
+			d, err := time.ParseDuration(value)
+			if err != nil {
+				return nil, err
+			}
+			g.Expires = time.Now().Add(d)
+		}
+	}
+	return g, nil
 }
 
 type Grant struct {
