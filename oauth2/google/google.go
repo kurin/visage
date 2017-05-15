@@ -70,9 +70,9 @@ func (g *grant) Verify(ctx context.Context) bool {
 	return (g.allowed[acc.Email] && acc.Verified) || g.Grant.Verify(ctx)
 }
 
-// VerifyEmails returns a grant that will verify users whose Google account is
+// VerifyEmail returns a grant that will verify users whose Google account is
 // tied to the address listed.
-func VerifyEmails(g visage.Grant, emails []string) visage.Grant {
+func VerifyEmail(g visage.Grant, emails ...string) visage.Grant {
 	n := &grant{
 		Grant:   g,
 		allowed: make(map[string]bool),

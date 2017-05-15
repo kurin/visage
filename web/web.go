@@ -79,17 +79,28 @@ type auth struct {
 type rootPage struct {
 	FileSystems []fs
 	Auths       []auth
+	Admin       bool
 }
 
-func (s *Server) rootPage(r *http.Request) rootPage {
-	p := rootPage{}
+func servePage(w http.ResponseWriter, r *http.Request, tfile string, dot interface{}) {
+	temp, err := template.ParseFiles(tfile)
+	if err != nil {
+		panic(err)
+	}
+	if err := temp.Execute(w, dot); err != nil {
+		panic(err)
+	}
+}
 
+func (s *Server) root(w http.ResponseWriter, r *http.Request) {
+	ctx := s.Context(r)
+	p := rootPage{}
+	if s.Admin != nil {
+		p.Admin = s.Admin.Verify(ctx)
+	}
 	for _, f := range s.Visage.FileSystems() {
 		p.FileSystems = append(p.FileSystems, fs{Name: f})
 	}
-
-	ctx := s.Context(r)
-
 	if s.Google != nil {
 		a := auth{
 			Path: "/google.login",
@@ -106,21 +117,6 @@ func (s *Server) rootPage(r *http.Request) rootPage {
 		a.Credential, a.Logged = github.Show(ctx)
 		p.Auths = append(p.Auths, a)
 	}
-	return p
-}
-
-func servePage(w http.ResponseWriter, r *http.Request, tfile string, dot interface{}) {
-	temp, err := template.ParseFiles(tfile)
-	if err != nil {
-		panic(err)
-	}
-	if err := temp.Execute(w, dot); err != nil {
-		panic(err)
-	}
-}
-
-func (s *Server) root(w http.ResponseWriter, r *http.Request) {
-	p := s.rootPage(r)
 	servePage(w, r, "web/static/visage.html", p)
 }
 
@@ -246,7 +242,7 @@ func (s *Server) setShare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	grant := r.PostFormValue("grant")
-	gr, err := parseGrant(grant)
+	gr, err := ParseGrant(grant)
 	if err != nil {
 		internalError(w, r, err)
 		return
@@ -267,7 +263,7 @@ func internalError(w http.ResponseWriter, r *http.Request, err error) {
 	http.Error(w, "500 "+err.Error(), http.StatusInternalServerError)
 }
 
-func parseGrant(s string) (*Grant, error) {
+func ParseGrant(s string) (*Grant, error) {
 	u, err := url.Parse(s)
 	if err != nil {
 		return nil, err
@@ -293,7 +289,6 @@ func parseGrant(s string) (*Grant, error) {
 			g.Expires = time.Now().Add(d)
 		}
 	}
-	fmt.Println(g)
 	return g, nil
 }
 
@@ -310,9 +305,9 @@ func (g Grant) Make() (visage.Grant, visage.CancelFunc) {
 	n := visage.NewGrant()
 	switch g.Provider {
 	case "google":
-		n = google.VerifyEmails(n, g.Values)
+		n = google.VerifyEmail(n, g.Values...)
 	case "github":
-		n = github.VerifyLogins(n, g.Values)
+		n = github.VerifyLogin(n, g.Values...)
 	}
 	if !g.Expires.IsZero() {
 		n = visage.WithDeadline(n, g.Expires)

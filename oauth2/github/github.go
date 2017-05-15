@@ -69,8 +69,8 @@ func (g *grant) Verify(ctx context.Context) bool {
 	return g.allowed[acc.Login] || g.Grant.Verify(ctx)
 }
 
-// VerifyLogins returns a grant that will verify users by their GitHub login.
-func VerifyLogins(g visage.Grant, logins []string) visage.Grant {
+// VerifyLogin returns a grant that will verify users by their GitHub login.
+func VerifyLogin(g visage.Grant, logins ...string) visage.Grant {
 	n := &grant{
 		Grant:   g,
 		allowed: make(map[string]bool),

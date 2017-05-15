@@ -36,6 +36,7 @@ var (
 	root   = flag.String("root", "", "serve the given directory")
 	port   = flag.String("port", "8080", "port to listen on")
 	domain = flag.String("domain", "", "domain (for TLS)")
+	admin  = flag.String("admin", "", "admin user specification")
 )
 
 func ghcfg() *github.Config {
@@ -86,10 +87,17 @@ func main() {
 		fmt.Println(err)
 		return
 	}
+	a, err := web.ParseGrant(*admin)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	ag, _ := a.Make()
 	w := web.Server{
 		Visage: v,
 		GitHub: ghcfg(),
 		Google: gcfg(),
+		Admin:  ag,
 	}
 	w.RegisterHandlers("/")
 	if *domain != "" {

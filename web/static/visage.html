@@ -14,8 +14,11 @@
 {{if .Logged}}{{ .Name }} as {{ .Credential }}<br>{{end}}
 {{end}}
 <h2>File Systems</h2>
+{{ $admin := .Admin }}
 {{range .FileSystems}}
+{{ if $admin }}
 <a href="/share?fs={{ .Name | urlquery }}">share {{ .Name }}</a> -
+{{ end }}
 <a href="/list?fs={{ .Name | urlquery }}">visit {{ .Name }}</a><br>
 {{end}}
 </body>
