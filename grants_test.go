@@ -99,3 +99,19 @@ func TestTimeout(t *testing.T) {
 		}
 	}
 }
+
+func TestCancel(t *testing.T) {
+	g := NewGrant()
+
+	if !g.Valid() {
+		t.Errorf("%T invalid")
+	}
+	g, cf := WithCancel(g)
+	if !g.Valid() {
+		t.Errorf("uncancelled grant invalid")
+	}
+	cf()
+	if g.Valid() {
+		t.Errorf("cancelled grant is still valid")
+	}
+}
