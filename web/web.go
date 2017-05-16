@@ -75,6 +75,7 @@ type auth struct {
 	Name       string
 	Logged     bool
 	Credential string
+	Logout     string
 }
 
 type rootPage struct {
@@ -108,6 +109,7 @@ func (s *Server) root(w http.ResponseWriter, r *http.Request) {
 			Name: "The Googles",
 		}
 		a.Credential, a.Logged = google.Show(ctx)
+		a.Logout = s.Google.LogoutPath
 		p.Auths = append(p.Auths, a)
 	}
 	if s.GitHub != nil {
@@ -116,6 +118,7 @@ func (s *Server) root(w http.ResponseWriter, r *http.Request) {
 			Name: "GitHubris",
 		}
 		a.Credential, a.Logged = github.Show(ctx)
+		a.Logout = s.GitHub.LogoutPath
 		p.Auths = append(p.Auths, a)
 	}
 	servePage(w, r, "web/static/visage.html", p)

@@ -49,6 +49,7 @@ func ghcfg() *github.Config {
 		ClientID:     id,
 		ClientSecret: secret,
 		RedirectURI:  url,
+		LogoutPath:   "/github.logout.bye",
 	}
 }
 
@@ -63,6 +64,7 @@ func gcfg() *google.Config {
 		ClientID:     id,
 		ClientSecret: secret,
 		RedirectURI:  url,
+		LogoutPath:   "/google.logout.bye",
 	}
 }
 

@@ -8,7 +8,7 @@
 {{ $admin := .Admin }}
 <h2>Log in with</h2>
 {{range .Auths}}
-{{if not .Logged}}<a href="{{ .Path }}">{{ .Name }}</a>{{else}}{{ .Name }} as {{ .Credential }}{{ end }}
+{{if not .Logged}}<a href="{{ .Path }}">{{ .Name }}</a>{{else}}{{ .Name }} as {{ .Credential }} (<a href="{{ .Logout }}">logout</a>){{ end }}
 {{end}}
 {{ if $admin }}
 <h2>Create file systems</h2>

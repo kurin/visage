@@ -87,6 +87,7 @@ type Config struct {
 	ClientID     string
 	ClientSecret string
 	RedirectURI  string
+	LogoutPath   string
 }
 
 // RegisterHandlers registers Google Sign-In handlers.  The given path
@@ -106,6 +107,7 @@ func (c *Config) RegisterHandlers(path string) error {
 		return err
 	}
 	http.HandleFunc(r.Path, loginReturnHandler(cfg))
+	http.HandleFunc(c.LogoutPath, logoutHandler)
 	return nil
 }
 
@@ -204,6 +206,14 @@ func loginReturnHandler(config *oauth2.Config) http.HandlerFunc {
 		}
 		http.Redirect(w, r, rURI, http.StatusTemporaryRedirect)
 	}
+}
+
+func logoutHandler(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:   tokenCookie,
+		MaxAge: -1,
+	})
+	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 }
 
 // Show reports the value of the verified credentials, if any.
