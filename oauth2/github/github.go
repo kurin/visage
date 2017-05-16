@@ -64,7 +64,7 @@ func (g *grant) Allows(path string) bool { return g.Grant.Allows(path) }
 func (g *grant) Verify(ctx context.Context) bool {
 	acc, ok := ctx.Value(oauthToken).(*access)
 	if !ok {
-		return false
+		return g.Grant.Verify(ctx)
 	}
 	return g.allowed[acc.Login] || g.Grant.Verify(ctx)
 }

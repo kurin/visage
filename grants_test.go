@@ -104,7 +104,7 @@ func TestCancel(t *testing.T) {
 	g := NewGrant()
 
 	if !g.Valid() {
-		t.Errorf("%T invalid")
+		t.Errorf("%T invalid", g)
 	}
 	g, cf := WithCancel(g)
 	if !g.Valid() {

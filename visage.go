@@ -101,7 +101,7 @@ func (s *Share) FileSystem(fs string) (FileSystem, error) {
 
 	f, ok := s.fs[fs]
 	if !ok {
-		return nil, fmt.Errorf("visage: %s: file system not registered")
+		return nil, fmt.Errorf("visage: %s: file system not registered", fs)
 	}
 	return f, nil
 }
@@ -112,7 +112,7 @@ func (s *Share) View(fs string) (*View, error) {
 
 	f, ok := s.fs[fs]
 	if !ok {
-		return nil, fmt.Errorf("visage: %s: file system not registered")
+		return nil, fmt.Errorf("visage: %s: file system not registered", fs)
 	}
 
 	return &View{
