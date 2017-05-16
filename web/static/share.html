@@ -6,12 +6,7 @@
 <input type="submit">
 <hr>
 <input type="hidden" name="fs" value="{{ .FS }}">
-grant:<br>
-type: <select name="grant-type">
-{{ range .GrantTypes }}<option>{{ . }}</option>{{ end }}
-</select><br>
-principal: <input type="text" name="grant-principal"><br>
-ttl: <input type="text" name="grant-ttl"></br>
+grant: <input type="text" name="grant">
 <hr>
 <select name="files">
 {{ range .Files }}

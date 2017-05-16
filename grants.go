@@ -42,10 +42,10 @@ func (f *fileListGrant) Allows(p string) bool {
 	return f.files[p] || f.Grant.Allows(p)
 }
 
-// AllowFileList wraps the parent grant, returning a new grant that allows
+// AllowFiles wraps the parent grant, returning a new grant that allows
 // any of the given paths.  It does so in addition to any paths already allowed
 // by g.
-func AllowFileList(g Grant, paths []string) Grant {
+func AllowFiles(g Grant, paths []string) Grant {
 	f := &fileListGrant{
 		Grant: g,
 		files: make(map[string]bool),

@@ -32,7 +32,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/kurin/visage"
@@ -253,25 +252,16 @@ func (s *Server) setShare(w http.ResponseWriter, r *http.Request) {
 		internalError(w, r, err)
 		return
 	}
-	gtype := r.PostFormValue("grant-type")
-	gprinc := r.PostFormValue("grant-principal")
-	gttl := r.PostFormValue("grant-ttl")
-	g := visage.NewGrant()
-	switch gtype {
-	case "google":
-		g = google.VerifyEmail(g, gprinc)
-	case "github":
-		g = github.VerifyLogin(g, gprinc)
-	}
-	ttl, err := time.ParseDuration(gttl)
+	gstr := r.PostFormValue("grant")
+	gr, err := ParseGrant(gstr)
 	if err != nil {
 		internalError(w, r, err)
 		return
 	}
-	g = visage.WithTimeout(g, ttl)
+	g, _ := gr.Make()
 	fs := r.PostFormValue("fs")
 	if len(r.Form["files"]) > 0 {
-		g = visage.WithAllowFileList(g, r.Form["files"])
+		g = visage.AllowFiles(g, r.Form["files"])
 	}
 	s.Visage.AddGrant(fs, g)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -305,6 +295,12 @@ func internalError(w http.ResponseWriter, r *http.Request, err error) {
 	http.Error(w, "500 "+err.Error(), http.StatusInternalServerError)
 }
 
+// ParseGrant parses the given string into a Grant.  s must be of the form
+//     provider:principal[?key=val[&key2=val2]]
+// where the principal is in the grant's Values, and various arguments
+// can be passed via keys.
+//
+// The only key currently supported is ttl, which sets an expiration time.
 func ParseGrant(s string) (*Grant, error) {
 	u, err := url.Parse(s)
 	if err != nil {
@@ -313,18 +309,13 @@ func ParseGrant(s string) (*Grant, error) {
 
 	g := &Grant{}
 	g.Provider = u.Scheme
-	g.Values = []string{u.Host}
+	g.Values = []string{u.Opaque}
 
-	for _, ent := range strings.Split(u.Path, "/") {
-		if strings.Index(ent, "=") < 0 {
-			continue
-		}
-		parts := strings.SplitN(ent, "=", 2)
-		key := parts[0]
-		value := parts[1]
+	for key := range u.Query() {
+		val := u.Query().Get(key)
 		switch key {
 		case "ttl":
-			d, err := time.ParseDuration(value)
+			d, err := time.ParseDuration(val)
 			if err != nil {
 				return nil, err
 			}

@@ -5,16 +5,16 @@
 </head>
 
 <body>
+{{ $admin := .Admin }}
 <h2>Log in with</h2>
 {{range .Auths}}
-{{if not .Logged}}<a href="{{ .Path }}">{{ .Name }}</a>{{end}}
+{{if not .Logged}}<a href="{{ .Path }}">{{ .Name }}</a>{{else}}{{ .Name }} as {{ .Credential }}{{ end }}
 {{end}}
-<h2>Logged in with</h2>
-{{range .Auths}}
-{{if .Logged}}{{ .Name }} as {{ .Credential }}<br>{{end}}
-{{end}}
+{{ if $admin }}
+<h2>Create file systems</h2>
+<a href="/fs">go</a>
+{{ end }}
 <h2>File Systems</h2>
-{{ $admin := .Admin }}
 {{range .FileSystems}}
 {{ if $admin }}
 <a href="/share?fs={{ .Name | urlquery }}">share {{ .Name }}</a> -
