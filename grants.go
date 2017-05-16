@@ -42,10 +42,10 @@ func (f *fileListGrant) Allows(p string) bool {
 	return f.files[p] || f.Grant.Allows(p)
 }
 
-// WithAllowFileList wraps the parent grant, returning a new grant that allows
+// AllowFileList wraps the parent grant, returning a new grant that allows
 // any of the given paths.  It does so in addition to any paths already allowed
 // by g.
-func WithAllowFileList(g Grant, paths []string) Grant {
+func AllowFileList(g Grant, paths []string) Grant {
 	f := &fileListGrant{
 		Grant: g,
 		files: make(map[string]bool),
@@ -65,10 +65,10 @@ func (p prefixGrant) Allows(path string) bool {
 	return strings.HasPrefix(path, p.pfx) || p.Grant.Allows(path)
 }
 
-// WithAllowPrefix wraps the parent grant, returning a new grant that allows
+// AllowPrefix wraps the parent grant, returning a new grant that allows
 // any paths with the given prefix.  It does so in addition to any paths already
 // allowed by g.
-func WithAllowPrefix(g Grant, prefix string) Grant {
+func AllowPrefix(g Grant, prefix string) Grant {
 	return prefixGrant{
 		Grant: g,
 		pfx:   prefix,
