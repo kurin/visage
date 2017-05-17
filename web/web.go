@@ -32,6 +32,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/kurin/visage"
@@ -85,7 +86,7 @@ type rootPage struct {
 }
 
 func servePage(w http.ResponseWriter, r *http.Request, tfile string, dot interface{}) {
-	temp, err := template.ParseFiles(tfile)
+	temp, err := template.New(filepath.Base(tfile)).Funcs(template.FuncMap{"lower": strings.ToLower}).ParseFiles(tfile)
 	if err != nil {
 		panic(err)
 	}
@@ -106,7 +107,7 @@ func (s *Server) root(w http.ResponseWriter, r *http.Request) {
 	if s.Google != nil {
 		a := auth{
 			Path: "/google.login",
-			Name: "The Googles",
+			Name: "Google",
 		}
 		a.Credential, a.Logged = google.Show(ctx)
 		a.Logout = s.Google.LogoutPath
@@ -115,7 +116,7 @@ func (s *Server) root(w http.ResponseWriter, r *http.Request) {
 	if s.GitHub != nil {
 		a := auth{
 			Path: "/github.login",
-			Name: "GitHubris",
+			Name: "GitHub",
 		}
 		a.Credential, a.Logged = github.Show(ctx)
 		a.Logout = s.GitHub.LogoutPath
