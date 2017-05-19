@@ -1,40 +1,40 @@
 {{ template "header.html" }}
-	<div class="col-md-3">
-	<h3>Credentials</h3>
+  <div class="col-md-3">
+  <h3>Credentials</h3>
 {{ range .Auths }}
   {{ if not .Logged }}
-		<a class="btn btn-social btn-block btn-{{ .Name | lower }}" href="{{ .Path }}">
-		  <span class="fa fa-{{ .Name | lower }}"></span>Sign in with {{ .Name }}
-		</a>
+    <a class="btn btn-social btn-block btn-{{ .Name | lower }}" href="{{ .Path }}">
+      <span class="fa fa-{{ .Name | lower }}"></span>Sign in with {{ .Name }}
+    </a>
   {{ else }}
-		<a class="btn btn-social-icon btn-block btn-{{ .Name | lower }}" href="{{ .Logout }}">
-		  <span class="fa fa-{{ .Name | lower }}"></span>
-		</a>
+    <a class="btn btn-social-icon btn-block btn-{{ .Name | lower }}" href="{{ .Logout }}">
+      <span class="fa fa-{{ .Name | lower }}"></span>
+    </a>
   {{ end }}
 {{ end }}
-	</div>
+  </div>
 
-	<div class="col-md-6">
-		<h2>Shares</h2>
-		<div class="panel-group" id="file-systems">
-			{{ range .State.Shares }}
-			{{ template "filesystem.html" . }}
-			{{ end }}
-			{{ if isAdmin }}
+  <div class="col-md-6">
+    <h2>Shares</h2>
+    <div class="panel-group" id="file-systems">
+      {{ range .State.Shares }}
+      {{ template "filesystem.html" . }}
+      {{ end }}
+      {{ if isAdmin }}
       <div class="panel panel-default">
         <div class="panel-heading" data-toggle="collapse" data-target="#add-share">Add Share</div>
         <div class="panel-body collapse" id="add-share">
-					<form action="/setfs" method="POST">
-						<div class="form-group">
-							<label for="add-share-type">Share path</label>
-							<input type="text" id="add-share-type" name="fs" class="form-control" placeholder="Path">
-						</div>
-						<button type="submit" class="btn btn-default">Submit</button>
-					</form>
+          <form action="/setfs" method="POST">
+            <div class="form-group">
+              <label for="add-share-type">Share path</label>
+              <input type="text" id="add-share-type" name="fs" class="form-control" placeholder="Path">
+            </div>
+            <button type="submit" class="btn btn-default">Submit</button>
+          </form>
         </div>
       </div>
-			{{ end }}
-		</div>
-	</div>
+      {{ end }}
+    </div>
+  </div>
 
 {{ template "footer.html" }}
