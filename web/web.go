@@ -61,8 +61,6 @@ func (s *Server) RegisterHandlers(root string) error {
 	http.HandleFunc(path.Join("/", root, "/"), s.root)
 	//http.HandleFunc(path.Join("/", root, "/list"), s.list)
 	//http.HandleFunc(path.Join("/", root, "/get"), s.get)
-	//http.HandleFunc(path.Join("/", root, "/share"), s.share)
-	//http.HandleFunc(path.Join("/", root, "/setshare"), s.setShare)
 	http.HandleFunc(path.Join("/", root, "/setfs"), s.setFS)
 
 	temp, err := template.New("null").Funcs(template.FuncMap{
@@ -164,25 +162,6 @@ func (s *Server) Context(r *http.Request) context.Context {
 	return ctx
 }
 
-/*
-func (s *Server) list(w http.ResponseWriter, r *http.Request) {
-	ctx := s.Context(r)
-	fs := r.URL.Query().Get("fs")
-	view, err := s.Visage.View(fs)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	list, err := view.List(ctx)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	p := s.page(r)
-	s.servePage(w, r, "list.html", p)
-}
-*/
-
 func (s *Server) get(w http.ResponseWriter, r *http.Request) {
 	ctx := s.Context(r)
 	file, err := url.QueryUnescape(r.URL.Query().Get("file"))
@@ -214,44 +193,6 @@ func (s *Server) get(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filepath.Base(file)))
 	io.Copy(w, f)
 }
-
-/*
-func (s *Server) share(w http.ResponseWriter, r *http.Request) {
-	ctx := s.Context(r)
-	if !s.Admin.Verify(ctx) {
-		http.Error(w, "you're not an admin", http.StatusUnauthorized)
-		return
-	}
-	fs, err := url.QueryUnescape(r.URL.Query().Get("fs"))
-	if err != nil {
-		internalError(w, r, err)
-		return
-	}
-	fsys, err := s.Visage.FileSystem(fs)
-	if err != nil {
-		internalError(w, r, err)
-		return
-	}
-
-	p := s.page(r)
-		if err := visage.Walk(fsys, "", func(path string, fi os.FileInfo, err error) error {
-			if err != nil {
-				if fi != nil && fi.IsDir() {
-					return filepath.SkipDir
-				}
-				return err
-			}
-			if fi.IsDir() {
-				return nil
-			}
-			p.Files = append(p.Files, path)
-			return nil
-		}); err != nil {
-			log.Print(err)
-		}
-	s.servePage(w, r, "share.html", p)
-}
-*/
 
 func (s *Server) setShare(w http.ResponseWriter, r *http.Request) {
 	ctx := s.Context(r)
