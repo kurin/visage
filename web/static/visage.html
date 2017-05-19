@@ -1,38 +1,40 @@
-<!DOCTYPE html>
-<html>
-<head>
-<title>what</title>
-<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
-<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap-theme.min.css" integrity="sha384-rHyoN1iRsVXV4nD0JutlnGaslCJuC7uwjduW9SVrLvRYooPp2bWYgmgJQIXwl/Sp" crossorigin="anonymous">
-<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css" crossorigin="anonymous">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/bootstrap-social/5.1.1/bootstrap-social.css" crossorigin="anonymous">
-<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js" integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa" crossorigin="anonymous"></script>
-</head>
-
-<body>
-{{ $admin := .Admin }}
-<h2>Log in with</h2>
+{{ template "header.html" }}
+	<div class="col-md-3">
+	<h3>Credentials</h3>
 {{ range .Auths }}
-	{{ if not .Logged }}
-<a class="btn btn-social btn-{{ .Name | lower }}" href="{{ .Path }}">
-	<span class="fa fa-{{ .Name | lower }}"></span> Sign in with {{ .Name }}
-</a>
-	{{ else }}
-<a class="btn btn-social-icon btn-{{ .Name | lower }}" href="{{ .Logout }}">
-	<span class="fa fa-{{ .Name | lower }}"></span>
-</a>
-	{{ end }}
+  {{ if not .Logged }}
+		<a class="btn btn-social btn-block btn-{{ .Name | lower }}" href="{{ .Path }}">
+		  <span class="fa fa-{{ .Name | lower }}"></span>Sign in with {{ .Name }}
+		</a>
+  {{ else }}
+		<a class="btn btn-social-icon btn-block btn-{{ .Name | lower }}" href="{{ .Logout }}">
+		  <span class="fa fa-{{ .Name | lower }}"></span>
+		</a>
+  {{ end }}
 {{ end }}
-{{ if $admin }}
-<h2>Create file systems</h2>
-<a href="/fs">go</a>
-{{ end }}
-<h2>File Systems</h2>
-{{range .FileSystems}}
-{{ if $admin }}
-<a href="/share?fs={{ .Name | urlquery }}">share {{ .Name }}</a> -
-{{ end }}
-<a href="/list?fs={{ .Name | urlquery }}">visit {{ .Name }}</a><br>
-{{end}}
-</body>
-</html>
+	</div>
+
+	<div class="col-md-6">
+		<h2>Shares</h2>
+		<div class="panel-group" id="file-systems">
+			{{ range .State.Shares }}
+			{{ template "filesystem.html" . }}
+			{{ end }}
+			{{ if isAdmin }}
+      <div class="panel panel-default">
+        <div class="panel-heading" data-toggle="collapse" data-target="#add-share">Add Share</div>
+        <div class="panel-body collapse" id="add-share">
+					<form action="/setfs" method="POST">
+						<div class="form-group">
+							<label for="add-share-type">Share path</label>
+							<input type="text" id="add-share-type" name="fs" class="form-control" placeholder="Path">
+						</div>
+						<button type="submit" class="btn btn-default">Submit</button>
+					</form>
+        </div>
+      </div>
+			{{ end }}
+		</div>
+	</div>
+
+{{ template "footer.html" }}

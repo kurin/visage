@@ -91,7 +91,12 @@ func main() {
 		Google: gcfg(),
 		Admin:  ag,
 	}
-	w.RegisterHandlers("/")
+	w.Visage.AddFileSystem(visage.Directory("/tmp"))
+	w.Visage.AddFileSystem(visage.Directory("/var/log"))
+	if err := w.RegisterHandlers("/"); err != nil {
+		fmt.Println(err)
+		return
+	}
 	if *domain != "" {
 		server := &http.Server{
 			Addr: ":" + *port,

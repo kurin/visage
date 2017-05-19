@@ -26,10 +26,8 @@ import (
 	"fmt"
 	"html/template"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
-	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -46,11 +44,13 @@ type Server struct {
 	Google *google.Config
 	GitHub *github.Config
 
-	SecretKey string
-	Admin     visage.Grant
+	State *State
+	Admin visage.Grant
+
+	template *template.Template
 }
 
-func (s *Server) RegisterHandlers(root string) {
+func (s *Server) RegisterHandlers(root string) error {
 	if s.Google != nil {
 		s.Google.RegisterHandlers(path.Join("/", root, "/google.login"))
 	}
@@ -59,16 +59,36 @@ func (s *Server) RegisterHandlers(root string) {
 	}
 	// TODO: accept a custom mux
 	http.HandleFunc(path.Join("/", root, "/"), s.root)
-	http.HandleFunc(path.Join("/", root, "/list"), s.list)
-	http.HandleFunc(path.Join("/", root, "/get"), s.get)
-	http.HandleFunc(path.Join("/", root, "/share"), s.share)
-	http.HandleFunc(path.Join("/", root, "/setshare"), s.setShare)
-	http.HandleFunc(path.Join("/", root, "/fs"), s.fs)
+	//http.HandleFunc(path.Join("/", root, "/list"), s.list)
+	//http.HandleFunc(path.Join("/", root, "/get"), s.get)
+	//http.HandleFunc(path.Join("/", root, "/share"), s.share)
+	//http.HandleFunc(path.Join("/", root, "/setshare"), s.setShare)
 	http.HandleFunc(path.Join("/", root, "/setfs"), s.setFS)
+
+	temp, err := template.New("null").Funcs(template.FuncMap{
+		"lower":   strings.ToLower,
+		"id":      mkid,
+		"isAdmin": func() bool { return false },
+	}).ParseGlob("web/static/*")
+	if err != nil {
+		return err
+	}
+	s.template = temp
+	s.State = &State{}
+	return nil
+}
+
+func mkid(s string) string {
+	s = strings.ToLower(s)
+	s = strings.Replace(s, " ", "-", -1)
+	s = strings.Replace(s, "/", "", -1)
+	return s
 }
 
 type fs struct {
-	Name string
+	Name  string
+	ID    string
+	Admin bool
 }
 
 type auth struct {
@@ -79,31 +99,31 @@ type auth struct {
 	Logout     string
 }
 
-type rootPage struct {
-	FileSystems []fs
-	Auths       []auth
-	Admin       bool
+type page struct {
+	Admin bool
+	Auths []auth
+	State *State
 }
 
-func servePage(w http.ResponseWriter, r *http.Request, tfile string, dot interface{}) {
-	temp, err := template.New(filepath.Base(tfile)).Funcs(template.FuncMap{"lower": strings.ToLower}).ParseFiles(tfile)
+func (s *Server) servePage(w http.ResponseWriter, r *http.Request, name string, dot interface{}) {
+	ctx := s.Context(r)
+	temp, err := s.template.Clone()
 	if err != nil {
 		panic(err)
 	}
-	if err := temp.Execute(w, dot); err != nil {
+	temp = temp.Funcs(template.FuncMap{
+		"isAdmin": func() bool { return s.Admin.Verify(ctx) },
+	})
+	if err := temp.ExecuteTemplate(w, name, dot); err != nil {
 		panic(err)
 	}
 }
 
-func (s *Server) root(w http.ResponseWriter, r *http.Request) {
+func (s *Server) page(r *http.Request) page {
+	p := page{
+		State: s.State,
+	}
 	ctx := s.Context(r)
-	p := rootPage{}
-	if s.Admin != nil {
-		p.Admin = s.Admin.Verify(ctx)
-	}
-	for _, f := range s.Visage.FileSystems() {
-		p.FileSystems = append(p.FileSystems, fs{Name: f})
-	}
 	if s.Google != nil {
 		a := auth{
 			Path: "/google.login",
@@ -122,7 +142,12 @@ func (s *Server) root(w http.ResponseWriter, r *http.Request) {
 		a.Logout = s.GitHub.LogoutPath
 		p.Auths = append(p.Auths, a)
 	}
-	servePage(w, r, "web/static/visage.html", p)
+	return p
+}
+
+func (s *Server) root(w http.ResponseWriter, r *http.Request) {
+	p := s.page(r)
+	s.servePage(w, r, "visage.html", p)
 }
 
 func (s *Server) Context(r *http.Request) context.Context {
@@ -139,11 +164,7 @@ func (s *Server) Context(r *http.Request) context.Context {
 	return ctx
 }
 
-type listPage struct {
-	FileSystem string
-	Files      []string
-}
-
+/*
 func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 	ctx := s.Context(r)
 	fs := r.URL.Query().Get("fs")
@@ -157,12 +178,10 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	p := &listPage{
-		FileSystem: fs,
-		Files:      list,
-	}
-	servePage(w, r, "web/static/list.html", p)
+	p := s.page(r)
+	s.servePage(w, r, "list.html", p)
 }
+*/
 
 func (s *Server) get(w http.ResponseWriter, r *http.Request) {
 	ctx := s.Context(r)
@@ -196,12 +215,7 @@ func (s *Server) get(w http.ResponseWriter, r *http.Request) {
 	io.Copy(w, f)
 }
 
-type sharePage struct {
-	FS         string
-	GrantTypes []string
-	Files      []string
-}
-
+/*
 func (s *Server) share(w http.ResponseWriter, r *http.Request) {
 	ctx := s.Context(r)
 	if !s.Admin.Verify(ctx) {
@@ -219,32 +233,25 @@ func (s *Server) share(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p := sharePage{
-		FS: fs,
-	}
-	if s.Google != nil {
-		p.GrantTypes = append(p.GrantTypes, "google")
-	}
-	if s.GitHub != nil {
-		p.GrantTypes = append(p.GrantTypes, "github")
-	}
-	if err := visage.Walk(fsys, "", func(path string, fi os.FileInfo, err error) error {
-		if err != nil {
-			if fi != nil && fi.IsDir() {
-				return filepath.SkipDir
+	p := s.page(r)
+		if err := visage.Walk(fsys, "", func(path string, fi os.FileInfo, err error) error {
+			if err != nil {
+				if fi != nil && fi.IsDir() {
+					return filepath.SkipDir
+				}
+				return err
 			}
-			return err
-		}
-		if fi.IsDir() {
+			if fi.IsDir() {
+				return nil
+			}
+			p.Files = append(p.Files, path)
 			return nil
+		}); err != nil {
+			log.Print(err)
 		}
-		p.Files = append(p.Files, path)
-		return nil
-	}); err != nil {
-		log.Print(err)
-	}
-	servePage(w, r, "web/static/share.html", p)
+	s.servePage(w, r, "share.html", p)
 }
+*/
 
 func (s *Server) setShare(w http.ResponseWriter, r *http.Request) {
 	ctx := s.Context(r)
@@ -271,15 +278,6 @@ func (s *Server) setShare(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-func (s *Server) fs(w http.ResponseWriter, r *http.Request) {
-	ctx := s.Context(r)
-	if !s.Admin.Verify(ctx) {
-		http.Error(w, "you're not an admin", http.StatusUnauthorized)
-		return
-	}
-	servePage(w, r, "web/static/fs.html", nil)
-}
-
 func (s *Server) setFS(w http.ResponseWriter, r *http.Request) {
 	ctx := s.Context(r)
 	if !s.Admin.Verify(ctx) {
@@ -292,11 +290,27 @@ func (s *Server) setFS(w http.ResponseWriter, r *http.Request) {
 		internalError(w, r, err)
 		return
 	}
+	s.State.Shares = append(s.State.Shares, Share{
+		FileSystem: fs,
+		Name:       fs,
+	})
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func internalError(w http.ResponseWriter, r *http.Request, err error) {
 	http.Error(w, "500 "+err.Error(), http.StatusInternalServerError)
+}
+
+type State struct {
+	Shares []Share `json:"shares"`
+	Admins []Grant `json:"admins"`
+}
+
+type Share struct {
+	FileSystem string  `json:"file_system"`
+	Root       string  `json:"root"`
+	Name       string  `json:"name"`
+	Grants     []Grant `json:"grants"`
 }
 
 // ParseGrant parses the given string into a Grant.  s must be of the form
@@ -305,13 +319,13 @@ func internalError(w http.ResponseWriter, r *http.Request, err error) {
 // can be passed via keys.
 //
 // The only key currently supported is ttl, which sets an expiration time.
-func ParseGrant(s string) (*Grant, error) {
+func ParseGrant(s string) (Grant, error) {
 	u, err := url.Parse(s)
 	if err != nil {
-		return nil, err
+		return Grant{}, err
 	}
 
-	g := &Grant{}
+	g := Grant{}
 	g.Provider = u.Scheme
 	g.Values = []string{u.Opaque}
 
@@ -321,7 +335,7 @@ func ParseGrant(s string) (*Grant, error) {
 		case "ttl":
 			d, err := time.ParseDuration(val)
 			if err != nil {
-				return nil, err
+				return Grant{}, err
 			}
 			g.Expires = time.Now().Add(d)
 		}
@@ -350,9 +364,4 @@ func (g Grant) Make() (visage.Grant, visage.CancelFunc) {
 		n = visage.WithDeadline(n, g.Expires)
 	}
 	return visage.WithCancel(n)
-}
-
-type FileSystem struct {
-	Type   string   `json:"type"`
-	Grants []string `json:"grant_names"`
 }
