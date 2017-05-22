@@ -2,15 +2,7 @@
   <div class="col-md-3">
   <h3>Credentials</h3>
 {{ range .Auths }}
-  {{ if not .Logged }}
-    <a class="btn btn-social btn-block btn-{{ .Name | lower }}" href="{{ .Path }}">
-      <span class="fa fa-{{ .Name | lower }}"></span>Sign in with {{ .Name }}
-    </a>
-  {{ else }}
-    <a class="btn btn-social-icon btn-block btn-{{ .Name | lower }}" href="{{ .Logout }}">
-      <span class="fa fa-{{ .Name | lower }}"></span>
-    </a>
-  {{ end }}
+{{ template "auth.html" . }}
 {{ end }}
   </div>
 
