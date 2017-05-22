@@ -24,6 +24,8 @@ import (
 	"golang.org/x/crypto/openpgp"
 )
 
+// NewDirectory creates a FileSystem that serves files with the given path at
+// the root.
 func NewDirectory(path string) FileSystem { return directory(path) }
 
 // Directory exposes a local directory as a FileSystem.
@@ -52,6 +54,9 @@ func (d directory) ReadDir(path string) ([]os.FileInfo, error) {
 	return f.Readdir(0)
 }
 
+// NewEncryptedDirectory returns a FileSystem that serves files from the given
+// root.  Files are encrypted on disk, and optionally signed.  Files are
+// automatically decrypted when read.
 func NewEncryptedDirectory(path string, recipients []*openpgp.Entity, signer *openpgp.Entity) FileSystem {
 	return &encryptedDir{
 		root:       path,
