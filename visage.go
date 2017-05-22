@@ -53,8 +53,20 @@ type FileSystem interface {
 	// String is a unique, descriptive identifier for this file system.
 	String() string
 
+	// Open the named file for reading.
 	Open(path string) (io.ReadCloser, error)
+
+	// Create should return a writer for the given path.  It is left to specific
+	// implementations whether they want to allow users to overwrite existing files,
+	// or to return an error, or to implement something more sophisticated such as
+	// versioning.
+	Create(path string) (io.WriteCloser, error)
+
+	// Stat should behave as os.Stat.  If the underlying file system implements
+	// symlinks, Stat should follow them and treat them as directories.
 	Stat(path string) (os.FileInfo, error)
+
+	// ReadDir should return all the entries in a given directory.
 	ReadDir(path string) ([]os.FileInfo, error)
 }
 

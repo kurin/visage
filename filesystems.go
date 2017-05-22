@@ -39,6 +39,10 @@ func (d Directory) Open(path string) (io.ReadCloser, error) {
 	return os.Open(d.absPath(path))
 }
 
+func (d Directory) Create(path string) (io.WriteCloser, error) {
+	return os.Create(d.absPath(path))
+}
+
 func (d Directory) Stat(path string) (os.FileInfo, error) {
 	return os.Stat(d.absPath(path))
 }
