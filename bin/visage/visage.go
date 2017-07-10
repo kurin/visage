@@ -91,8 +91,8 @@ func main() {
 		Google: gcfg(),
 		Admin:  ag,
 	}
-	w.Visage.AddFileSystem(visage.Directory("/tmp"))
-	w.Visage.AddFileSystem(visage.Directory("/var/log"))
+	w.Visage.AddFileSystem(visage.NewDirectory("/tmp"))
+	w.Visage.AddFileSystem(visage.NewDirectory("/var/log"))
 	if err := w.RegisterHandlers("/"); err != nil {
 		fmt.Println(err)
 		return

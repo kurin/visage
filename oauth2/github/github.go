@@ -12,7 +12,7 @@
 //   See the License for the specific language governing permissions and
 //   limitations under the License.
 
-// Package github provides visage grants and tokens for GitHub authentication.
+// Package github provides OKs and tokens for GitHub authentication.
 package github
 
 import (
@@ -24,8 +24,8 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/google/okay"
 	"github.com/gorilla/securecookie"
-	"github.com/kurin/visage"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/github"
@@ -52,33 +52,19 @@ type access struct {
 	Login string `json:"login"`
 }
 
-type grant struct {
-	visage.Grant
-
-	allowed map[string]bool
-}
-
-func (g *grant) Valid() bool             { return g.Grant.Valid() }
-func (g *grant) Allows(path string) bool { return g.Grant.Allows(path) }
-
-func (g *grant) Verify(ctx context.Context) bool {
-	acc, ok := ctx.Value(oauthToken).(*access)
-	if !ok {
-		return g.Grant.Verify(ctx)
-	}
-	return g.allowed[acc.Login] || g.Grant.Verify(ctx)
-}
-
-// VerifyLogin returns a grant that will verify users by their GitHub login.
-func VerifyLogin(g visage.Grant, logins ...string) visage.Grant {
-	n := &grant{
-		Grant:   g,
-		allowed: make(map[string]bool),
-	}
+// VerifyLogin returns an OK that will verify users by their GitHub login.
+func VerifyLogin(ok okay.OK, logins ...string) okay.OK {
+	allowed := make(map[string]bool)
 	for _, l := range logins {
-		n.allowed[l] = true
+		allowed[l] = true
 	}
-	return n
+	return okay.Verify(ok, func(ctx context.Context) (bool, error) {
+		acc, ok := ctx.Value(oauthToken).(*access)
+		if !ok {
+			return false, nil
+		}
+		return allowed[acc.Login], nil
+	})
 }
 
 type Config struct {

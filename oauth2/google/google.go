@@ -12,7 +12,7 @@
 //   See the License for the specific language governing permissions and
 //   limitations under the License.
 
-// Package google provides visage grants and tokens for Google Single-Sign On.
+// Package google provides OKs and tokens for Google Single-Sign On.
 package google
 
 import (
@@ -24,8 +24,8 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/google/okay"
 	"github.com/gorilla/securecookie"
-	"github.com/kurin/visage"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -53,34 +53,20 @@ type access struct {
 	Verified bool   `json:"verified_email"`
 }
 
-type grant struct {
-	visage.Grant
-
-	allowed map[string]bool
-}
-
-func (g *grant) Valid() bool             { return g.Grant.Valid() }
-func (g *grant) Allows(path string) bool { return g.Grant.Allows(path) }
-
-func (g *grant) Verify(ctx context.Context) bool {
-	acc, ok := ctx.Value(oauthToken).(*access)
-	if !ok {
-		return g.Grant.Verify(ctx)
-	}
-	return (g.allowed[acc.Email] && acc.Verified) || g.Grant.Verify(ctx)
-}
-
-// VerifyEmail returns a grant that will verify users whose Google account is
+// VerifyEmail returns an OK that will verify users whose Google account is
 // tied to the address listed.
-func VerifyEmail(g visage.Grant, emails ...string) visage.Grant {
-	n := &grant{
-		Grant:   g,
-		allowed: make(map[string]bool),
-	}
+func VerifyEmail(ok okay.OK, emails ...string) okay.OK {
+	allowed := make(map[string]bool)
 	for _, mail := range emails {
-		n.allowed[mail] = true
+		allowed[mail] = true
 	}
-	return n
+	return okay.Verify(ok, func(ctx context.Context) (bool, error) {
+		acc, ok := ctx.Value(oauthToken).(*access)
+		if !ok {
+			return false, nil
+		}
+		return allowed[acc.Email] && acc.Verified, nil
+	})
 }
 
 type Config struct {

@@ -33,6 +33,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/okay"
 	"github.com/kurin/visage"
 	"github.com/kurin/visage/oauth2/github"
 	"github.com/kurin/visage/oauth2/google"
@@ -45,7 +46,7 @@ type Server struct {
 	GitHub *github.Config
 
 	State *State
-	Admin visage.Grant
+	Admin okay.OK
 
 	template *template.Template
 }
@@ -110,7 +111,7 @@ func (s *Server) servePage(w http.ResponseWriter, r *http.Request, name string, 
 		panic(err)
 	}
 	temp = temp.Funcs(template.FuncMap{
-		"isAdmin": func() bool { return s.Admin.Verify(ctx) },
+		"isAdmin": func() bool { y, _ := s.Admin.Verify(ctx); return y },
 	})
 	if err := temp.ExecuteTemplate(w, name, dot); err != nil {
 		panic(err)
@@ -196,7 +197,7 @@ func (s *Server) get(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) setShare(w http.ResponseWriter, r *http.Request) {
 	ctx := s.Context(r)
-	if !s.Admin.Verify(ctx) {
+	if ok, _ := s.Admin.Verify(ctx); !ok {
 		http.Error(w, "you're not an admin", http.StatusUnauthorized)
 		return
 	}
@@ -210,23 +211,33 @@ func (s *Server) setShare(w http.ResponseWriter, r *http.Request) {
 		internalError(w, r, err)
 		return
 	}
-	g, _ := gr.Make()
+	ok, _ := gr.Make()
 	fs := r.PostFormValue("fs")
 	if len(r.Form["files"]) > 0 {
-		g = visage.AllowFiles(g, r.Form["files"])
+		allowed := make(map[string]bool)
+		for _, file := range r.Form["files"] {
+			allowed[file] = true
+		}
+		ok = okay.Allow(ok, func(p interface{}) (bool, error) {
+			path, k := p.(string)
+			if !k {
+				return false, nil
+			}
+			return allowed[path], nil
+		})
 	}
-	s.Visage.AddGrant(fs, g)
+	s.Visage.AddOK(fs, ok)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (s *Server) setFS(w http.ResponseWriter, r *http.Request) {
 	ctx := s.Context(r)
-	if !s.Admin.Verify(ctx) {
+	if ok, _ := s.Admin.Verify(ctx); !ok {
 		http.Error(w, "you're not an admin", http.StatusUnauthorized)
 		return
 	}
 	fs := r.PostFormValue("fs")
-	fsys := visage.Directory(fs)
+	fsys := visage.NewDirectory(fs)
 	if err := s.Visage.AddFileSystem(fsys); err != nil {
 		internalError(w, r, err)
 		return
@@ -293,16 +304,16 @@ type Grant struct {
 	Values     []string  `json:"values"`
 }
 
-func (g Grant) Make() (visage.Grant, visage.CancelFunc) {
-	n := visage.NewGrant()
+func (g Grant) Make() (okay.OK, okay.CancelFunc) {
+	ok := okay.New()
 	switch g.Provider {
 	case "google":
-		n = google.VerifyEmail(n, g.Values...)
+		ok = google.VerifyEmail(ok, g.Values...)
 	case "github":
-		n = github.VerifyLogin(n, g.Values...)
+		ok = github.VerifyLogin(ok, g.Values...)
 	}
 	if !g.Expires.IsZero() {
-		n = visage.WithDeadline(n, g.Expires)
+		ok = okay.WithDeadline(ok, g.Expires)
 	}
-	return visage.WithCancel(n)
+	return okay.WithCancel(ok)
 }
