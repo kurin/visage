@@ -12,40 +12,26 @@
 //   See the License for the specific language governing permissions and
 //   limitations under the License.
 
-// Package token implements a token-based grant.
+// Package token implements a token-based OK.
 package token
 
 import (
 	"context"
 
-	"github.com/kurin/visage"
+	"github.com/google/okay"
 )
-
-type grant struct {
-	visage.Grant
-	t string
-}
 
 type ctxKey string
 
-func (g *grant) Valid() bool        { return true }
-func (g *grant) Allows(string) bool { return false }
-
-func (g *grant) Verify(ctx context.Context) bool {
-	val, ok := ctx.Value(ctxKey(g.t)).(string)
-	if !ok {
-		return g.Grant.Verify(ctx)
-	}
-	return val == g.t || g.Grant.Verify(ctx)
-}
-
-// Verifies returns a new grant that verifies access based
-// on a static token.
-func Verifies(g visage.Grant, token string) visage.Grant {
-	return &grant{
-		Grant: g,
-		t:     token,
-	}
+// Verifies returns a new OK that verifies access based on a static token.
+func Verifies(ok okay.OK, token string) okay.OK {
+	return okay.Verify(ok, func(ctx context.Context) (bool, error) {
+		val, ok := ctx.Value(ctxKey(token)).(string)
+		if !ok {
+			return false, nil
+		}
+		return val == token, nil
+	})
 }
 
 // Context returns a new context that contains the given access token.
