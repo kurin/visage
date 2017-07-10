@@ -24,6 +24,8 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
+
+	"github.com/google/okay"
 )
 
 var (
@@ -31,15 +33,15 @@ var (
 )
 
 type Share struct {
-	fs     map[string]FileSystem
-	grants map[string][]Grant
-	mux    sync.Mutex
+	fs  map[string]FileSystem
+	oks map[string][]okay.OK
+	mux sync.Mutex
 }
 
 func New() *Share {
 	return &Share{
-		fs:     make(map[string]FileSystem),
-		grants: make(map[string][]Grant),
+		fs:  make(map[string]FileSystem),
+		oks: make(map[string][]okay.OK),
 	}
 }
 
@@ -68,20 +70,6 @@ type FileSystem interface {
 
 	// ReadDir should return all the entries in a given directory.
 	ReadDir(path string) ([]os.FileInfo, error)
-}
-
-// A Grant is used to gate access to resources in a FileSystem.  Methods in
-// this interface must be safe to call from multiple goroutines simultaneously.
-type Grant interface {
-	// Valid reports whether this grant can be used to gate access.  Grants should
-	// never become valid after having been invalid for any period of time.
-	Valid() bool
-
-	// Verify reports whether the given access token is good.
-	Verify(context.Context) bool
-
-	// Allows reports whether this grant gates access to the given path.
-	Allows(string) bool
 }
 
 func (s *Share) FileSystems() []string {
@@ -133,34 +121,30 @@ func (s *Share) View(fs string) (*View, error) {
 	}, nil
 }
 
-func (s *Share) AddGrant(fs string, g Grant) error {
+func (s *Share) AddOK(fs string, ok okay.OK) error {
 	s.mux.Lock()
 	defer s.mux.Unlock()
 
 	if _, ok := s.fs[fs]; !ok {
 		return fmt.Errorf("visage: %s: no such file system", fs)
 	}
-	s.grants[fs] = append(s.grants[fs], g)
+	s.oks[fs] = append(s.oks[fs], ok)
 	return nil
 }
 
-func (v *View) grants() []Grant {
-	var grants []Grant
+func (v *View) oks() []okay.OK {
+	var oks []okay.OK
 	v.s.mux.Lock()
-	for _, g := range v.s.grants[v.fs.String()] {
-		grants = append(grants, g)
+	for _, ok := range v.s.oks[v.fs.String()] {
+		oks = append(oks, ok)
 	}
 	v.s.mux.Unlock()
-	return grants
+	return oks
 }
 
 func (v *View) access(ctx context.Context, path string) bool {
-	for _, g := range v.grants() {
-		if g.Valid() && g.Verify(ctx) && g.Allows(path) {
-			return true
-		}
-	}
-	return false
+	ok, _ := okay.Check(ctx, path, v.oks()...)
+	return ok
 }
 
 func (v View) Open(ctx context.Context, path string) (io.ReadCloser, error) {
@@ -178,7 +162,7 @@ func (v View) ReadDir(ctx context.Context, path string) ([]os.FileInfo, error) {
 }
 
 func (v View) List(ctx context.Context) ([]string, error) {
-	grants := v.grants()
+	oks := v.oks()
 
 	var files []string
 	if err := Walk(v.fs, "", func(path string, fi os.FileInfo, err error) error {
@@ -193,11 +177,9 @@ func (v View) List(ctx context.Context) ([]string, error) {
 			return nil
 		}
 
-		for _, g := range grants {
-			if g.Valid() && g.Verify(ctx) && g.Allows(path) {
-				files = append(files, path)
-				return nil
-			}
+		if ok, _ := okay.Check(ctx, path, oks...); ok {
+			files = append(files, path)
+			return nil
 		}
 		return nil
 	}); err != nil {

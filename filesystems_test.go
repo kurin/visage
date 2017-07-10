@@ -14,7 +14,11 @@
 
 package visage
 
-import "testing"
+import (
+	"io/ioutil"
+	"os"
+	"testing"
+)
 
 func TestAbsPath(t *testing.T) {
 	table := []struct {
@@ -48,5 +52,29 @@ func TestAbsPath(t *testing.T) {
 		if got != ent.want {
 			t.Errorf("absPath(%q, %q): got %q, want %q", ent.root, ent.path, got, ent.want)
 		}
+	}
+}
+
+func TestDir(t *testing.T) {
+	d, err := ioutil.TempDir("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(d)
+
+	table := []struct {
+		root  string
+		files map[string]string
+	}{
+		{
+			root: "a",
+			files: map[string]string{
+				"whee": "whee",
+			},
+		},
+	}
+
+	for _, ent := range table {
+
 	}
 }
